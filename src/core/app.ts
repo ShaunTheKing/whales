@@ -4,6 +4,7 @@ import type { WhalesConfig } from '../contracts/config.ts'
 import { Store } from '../services/store-service.ts'
 import { Agents } from '../services/agents.ts'
 import { StubDriver } from '../drivers/stub.ts'
+import { OpenAICompatDriver } from '../drivers/openai-compat.ts'
 
 export interface App {
   ctx: Context
@@ -22,7 +23,8 @@ function Whales(ctx: Context, opts: AppOptions): void {
   ctx.plugin(Store, { path: opts.storePath })
   ctx.plugin(Agents)
   ctx.inject(['agents'], (ctx) => {
-    ctx.effect(() => ctx.agents.catalog.register('driver-stub', StubDriver), 'catalog:builtins')
+    ctx.effect(() => ctx.agents.catalog.register('driver-stub', StubDriver), 'catalog:driver-stub')
+    ctx.effect(() => ctx.agents.catalog.register('driver-openai-compat', OpenAICompatDriver), 'catalog:driver-openai-compat')
   })
 }
 

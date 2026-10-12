@@ -1,6 +1,6 @@
 # Progress
 
-## Current phase: 1 — Spike ✅ accepted (2026-10-12). Next: Phase 2 — Headless usable (awaiting go-ahead)
+## Current phase: 2 — Headless usable (in progress). Phase 1 ✅ accepted 2026-10-12.
 
 ### Phase 1 tasks
 
@@ -21,9 +21,20 @@
 - Mutation check: removing `isolate()` fails all 6 acceptance tests; removing the dispose hook fails exactly
   "disposing A tears down only A".
 
-## Phase 2 plan — Headless usable (not started)
-store ✔ (done in P1) · rules (orchestrator) · approvals (orchestrator) · memory · skills (install path reviewed) ·
-driver-openai-compat · driver-acp (fs/terminal handlers by orchestrator) · routines · CLI.
+## Phase 2 — Headless usable (user priority: openai-compat driver first)
+
+| ID | Task | Who | Status |
+|---|---|---|---|
+| 2.1 | `drivers/openai-compat.ts` (DeepSeek/OpenAI/OpenRouter/Ollama, SSE streaming) | tests: DeepSeek chat · impl: DeepSeek chat · stream parser rewritten + security hardening by orchestrator | accepted (mock only) |
+| 2.2 | `scripts/live-check.ts` (one real round-trip, 64-token cap) | orchestrator | accepted against local mock; **live call awaiting user OK** |
+| 2.3 | rules, approvals | orchestrator | todo |
+| 2.4 | memory, skills, routines, CLI | workers | todo |
+| 2.5 | driver-acp (Claude Code) | needs dependency approval | todo |
+
+2.1 review notes: worker left an undeclared variable and a duplicated handler block; the idle timer was never reset
+while streaming (any reply > 60 s would have been cut off) — not caught by the worker's tests, fixed and
+regression-tested (mutation-checked). Added: one redaction choke point for every error, `redirect: 'error'`
+(no Authorization header to another host), bounded error-body reads.
 
 ## Decisions log
 
@@ -51,3 +62,4 @@ driver-openai-compat · driver-acp (fs/terminal handlers by orchestrator) · rou
 |---|---|---|
 | 0 | design + probes | 0 |
 | 1 | review, 4 Cordis probes, agents/tools/app (~350 lines) | 11 calls, ~102k tokens (~45k in / ~57k out; 21k wasted by the reasoner retry) |
+| 2 (so far) | spec, stream-parser rewrite, security review, live-check | 2 calls, ~36k tokens |
