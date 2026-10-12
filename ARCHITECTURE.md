@@ -369,6 +369,16 @@ permission request are denied. A single-instance lock protects the database. Key
 
   A configured path must be absolute and name a `donsetch` file. Only its search is used; its fetch, crawl and bot-wall
   bypass are not.
+- **Managed SearXNG** (`services/searxng.ts`). It is the default backend when none is chosen.
+  - **Image:** `searxng/searxng`, pinned by digest, in a fixed container named `whales-searxng`.
+  - **Network:** published on `127.0.0.1:<free port>` only.
+  - **Settings:** `<dataDir>/searxng/settings.yml`, with JSON output on, the limiter off and a random secret.
+  - **Docker calls:** `execFile` with fixed arguments and a minimal environment. Nothing an agent sends reaches them; the
+    query only goes to SearXNG over HTTP.
+  - **Docker Desktop:** opened in the background (`open -g -a Docker`) when its daemon is down.
+  - **Lifecycle:** the container runs while Whales runs. It is warmed at start when it is the backend, and stopped on
+    shutdown, but only by the process that started it. If it stops answering, Whales restarts it once before a search
+    fails. An outdated container is replaced.
 - **Markdown.** `web/src/lib/markdown*.ts(x)` builds React elements. Links render only for http(s) and mailto, open in a
   new window, and the desktop shell sends them to the system browser. A line that is entirely bold becomes a heading.
 

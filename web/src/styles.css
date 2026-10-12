@@ -1623,6 +1623,20 @@ button.card:hover,
   margin: 0;
 }
 
+.free-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.free-card .grow > * + * {
+  margin-top: 4px;
+}
+
 .segmented {
   display: inline-flex;
   flex-wrap: wrap;

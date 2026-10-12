@@ -86,6 +86,24 @@ export function SearchSettings() {
     }
   }
 
+  const useFree = async () => {
+    setBusy(true)
+    setError(undefined)
+    setResult(undefined)
+    try {
+      const next = await api.useManagedSearxng()
+      if (!mounted.current) return
+      setStatus(next)
+      setEditing(false)
+      const tested = await api.testSearch()
+      if (mounted.current) setResult(tested)
+    } catch (err) {
+      if (mounted.current) setError(errorText(err))
+    } finally {
+      if (mounted.current) setBusy(false)
+    }
+  }
+
   const disable = async () => {
     if (!window.confirm('Turn off web search? Its saved key is deleted from the Keychain.')) return
     setBusy(true)
@@ -129,12 +147,47 @@ export function SearchSettings() {
         ) : null}
       </div>
 
+      {status.managed && (!config || config.managed) ? (
+        <div className="free-card">
+          <div className="grow">
+            <div className="row">
+              <strong>Free web search</strong>
+              {status.managed.state === 'running' ? (
+                <span className="badge badge-ok">Running</span>
+              ) : status.managed.state === 'starting' || busy ? (
+                <span className="badge">Starting…</span>
+              ) : status.managed.state === 'no-docker' ? (
+                <span className="badge badge-warn">Needs Docker</span>
+              ) : status.managed.state === 'error' ? (
+                <span className="badge badge-danger">Problem</span>
+              ) : (
+                <span className="badge">Ready</span>
+              )}
+            </div>
+            <div className="muted small">
+              {status.managed.state === 'running'
+                ? 'SearXNG runs privately on this Mac in Docker. No key, no account, no cost. Whales stops it when you quit.'
+                : status.managed.state === 'no-docker'
+                  ? 'Whales can run SearXNG for you in Docker. Install Docker Desktop (docker.com) or OrbStack first.'
+                  : 'Whales runs SearXNG privately on this Mac in Docker, with no key, account or cost. It turns on by itself the first time an agent searches, or start it now. The first start downloads it (about 100 MB).'}
+            </div>
+            {status.managed.url && status.managed.state === 'running' ? <div className="mono small">{status.managed.url}</div> : null}
+            {status.managed.detail && status.managed.state === 'error' ? <div className="error">{status.managed.detail}</div> : null}
+          </div>
+          {status.managed.state !== 'running' && status.managed.state !== 'no-docker' ? (
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void useFree()} disabled={busy || status.managed.state === 'starting'}>
+              {busy ? 'Starting…' : 'Start now'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {config && !editing ? (
         <div className="list">
           <div className="list-row">
             <div className="grow">
               <div>
-                <strong>{current?.label ?? config.kind}</strong>{' '}
+                <strong>{config.managed ? 'SearXNG (run by Whales)' : (current?.label ?? config.kind)}</strong>{' '}
                 {config.key === 'keychain' ? (
                   <span className="badge badge-ok">Key in Keychain</span>
                 ) : config.key === 'env' ? (

@@ -906,6 +906,17 @@ function registerSearch(app: App, api: Hono): void {
     return c.body(null, 204)
   })
 
+  // Starts (and on first use downloads) Whales' own SearXNG in Docker and makes it the backend. Can take minutes.
+  api.post('/search/searxng', async (c) => {
+    const service = search()
+    if (!service) return c.json({ error: 'search service unavailable' }, 503)
+    try {
+      return c.json(await service.useManagedSearxng())
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 409)
+    }
+  })
+
   api.post('/search/test', async (c) => {
     const service = search()
     if (!service) return c.json({ error: 'search service unavailable' }, 503)

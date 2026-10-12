@@ -176,6 +176,8 @@ export const api = {
   /** Web search backend. The key is write-only and goes to the Keychain. */
   searchStatus: () => json<SearchStatus>('GET', '/search'),
   configureSearch: (input: { kind: SearchKind; baseUrl?: string; apiKey?: string; binaryPath?: string }) => json<SearchStatus>('PUT', '/search', input),
+  /** Start Whales' own SearXNG (downloads it in Docker the first time; can take a few minutes). */
+  useManagedSearxng: () => json<SearchStatus>('POST', '/search/searxng'),
   clearSearchKey: () => json<void>('DELETE', '/search/key'),
   disableSearch: () => json<void>('DELETE', '/search'),
   /** Runs one real query ("Whales test"); may use a little of the backend's quota. */

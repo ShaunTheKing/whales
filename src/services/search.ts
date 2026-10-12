@@ -5,6 +5,7 @@ import path from 'node:path'
 import { Service, type Context } from 'cordis'
 import type { SearchBackendInfo, SearchConfig, SearchKind, SearchResult, SearchService, SearchStatus } from '../contracts/search.ts'
 import { MacKeychain, assertApiKey, type SecretStore } from '../core/keychain.ts'
+import { ManagedSearxng, type ManagedSearxngOptions } from './searxng.ts'
 
 /**
  * SECURITY (orchestrator-owned). The search backend. The query is the only agent-controlled input; the endpoint is
@@ -24,6 +25,8 @@ export interface SearchServiceConfig {
   endpoints?: Partial<Record<'brave' | 'tavily', string>>
   /** Tests only: extra directories searched for the `donsetch` program before the defaults. */
   programDirs?: string[]
+  /** Whales-managed SearXNG in Docker; `false` turns the automatic default off (tests). */
+  managed?: Partial<ManagedSearxngOptions> | false
 }
 
 export const SEARCH_BACKENDS: SearchBackendInfo[] = [
@@ -155,6 +158,7 @@ export class Search extends Service implements SearchService {
   private secrets: SecretStore | undefined
   private endpoints: typeof ENDPOINTS
   private programDirs: string[]
+  private managed: ManagedSearxng | undefined
 
   constructor(ctx: Context, config: SearchServiceConfig = {}) {
     super(ctx, 'search')
@@ -162,11 +166,21 @@ export class Search extends Service implements SearchService {
     this.secrets = config.secrets === false ? undefined : (config.secrets ?? (process.platform === 'darwin' ? new MacKeychain() : undefined))
     this.endpoints = { ...ENDPOINTS, ...config.endpoints }
     this.programDirs = config.programDirs ?? []
+    const dataDir = ctx.get('config')?.dataDir
+    if (config.managed !== false && dataDir) {
+      this.managed = new ManagedSearxng({ dir: path.join(dataDir, 'searxng'), ...config.managed })
+      // The container runs only while Whales runs: warm it at start if it is the backend, stop it on shutdown.
+      ctx.effect(() => {
+        if (this.config()?.managed) void this.managed?.ensure().catch(() => {})
+        return () => this.managed?.stop().catch(() => {})
+      }, 'managed-searxng')
+    }
   }
 
   async status(): Promise<SearchStatus> {
     const status: SearchStatus = { backends: SEARCH_BACKENDS.map((b) => ({ ...b })), secretStore: this.secrets?.kind ?? 'none' }
     const config = this.config()
+    if (this.managed && (!config || config.managed)) status.managed = await this.managed.status()
     if (config) {
       let key: 'keychain' | 'env' | 'none' = 'none'
       try {
@@ -177,6 +191,7 @@ export class Search extends Service implements SearchService {
       const env = SEARCH_BACKENDS.find((b) => b.kind === config.kind)?.keyEnv
       if (key === 'none' && env && process.env[env]) key = 'env'
       status.config = { kind: config.kind, key, ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}) }
+      if (config.managed) status.config.managed = true
       if (config.kind === 'donsetch') {
         if (config.binaryPath) status.config.binaryPath = config.binaryPath
         status.config.program = findProgram(config.binaryPath, this.programDirs)
@@ -212,15 +227,34 @@ export class Search extends Service implements SearchService {
   async disable(): Promise<void> {
     const config = this.config()
     if (config) await this.secrets?.delete(account(config.kind))
+    if (config?.managed) await this.managed?.remove()
     this.own.store.collection('searchConfig').delete(CONFIG_ID)
+  }
+
+  async useManagedSearxng(): Promise<SearchStatus> {
+    if (!this.managed) throw new Error('Whales-managed SearXNG is not available here')
+    const url = await this.managed.ensure()
+    const previous = this.config()
+    if (previous && !previous.managed) await this.secrets?.delete(account(previous.kind)).catch(() => {})
+    this.own.store.collection('searchConfig').put({ id: CONFIG_ID, scope: 'global', createdAt: Date.now(), kind: 'searxng', baseUrl: url, managed: true })
+    return this.status()
   }
 
   async search(query: string, opts: { count?: number; signal?: AbortSignal } = {}): Promise<SearchResult[]> {
     if (typeof query !== 'string' || !query.trim()) throw new TypeError('query must be a non-empty string')
     const q = query.trim().slice(0, MAX_QUERY)
     const count = Math.min(Math.max(Math.trunc(opts.count ?? 5), 1), MAX_RESULTS)
-    const config = this.config()
-    if (!config) throw new Error('web search is not set up yet: open Models → Web search in Whales and choose Brave, Tavily or SearXNG')
+    let config = this.config()
+    if (!config) {
+      // No backend chosen: use free, self-hosted SearXNG that Whales runs in Docker.
+      if (!this.managed) throw new Error('web search is not set up yet: open Models → Web search in Whales and choose a backend')
+      try {
+        await this.useManagedSearxng()
+      } catch (err) {
+        throw new Error(`web search is not set up and Whales could not start its free SearXNG: ${err instanceof Error ? err.message : String(err)} (or choose Tavily/Brave on Models → Web search)`)
+      }
+      config = this.config()!
+    }
     const key = await this.key(config.kind)
     const backend = SEARCH_BACKENDS.find((b) => b.kind === config.kind)!
     if (backend.needsKey && !key) throw new Error(`no API key saved for ${backend.label} (Models → Web search)`)
@@ -232,6 +266,7 @@ export class Search extends Service implements SearchService {
         case 'tavily':
           return await this.tavily(q, count, key!, signal)
         case 'searxng':
+          if (config.managed) return await this.managedSearch(q, count, config, signal)
           return await this.searxng(q, count, config.baseUrl!, key, signal)
         case 'donsetch':
           return await this.donsetch(q, count, config.binaryPath, signal)
@@ -300,6 +335,18 @@ export class Search extends Service implements SearchService {
       })
       .filter((r): r is SearchResult => r !== undefined)
       .slice(0, count)
+  }
+
+  /** Search the managed instance; if it is not answering (Docker restarted, Mac rebooted), bring it back once. */
+  private async managedSearch(q: string, count: number, config: SearchConfig, signal: AbortSignal): Promise<SearchResult[]> {
+    try {
+      return await this.searxng(q, count, config.baseUrl!, undefined, signal)
+    } catch (err) {
+      if (signal.aborted || !this.managed || /HTTP \d/.test(err instanceof Error ? err.message : '')) throw err
+      const url = await this.managed.ensure()
+      if (url !== config.baseUrl) this.own.store.collection('searchConfig').put({ ...config, baseUrl: url })
+      return await this.searxng(q, count, url, undefined, signal)
+    }
   }
 
   private donsetch(q: string, count: number, binaryPath: string | undefined, signal: AbortSignal): Promise<SearchResult[]> {

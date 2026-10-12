@@ -42,7 +42,14 @@ Ollama (local), or any OpenAI-compatible URL.
 
 ## Web search
 
-On **Models → Web search**, choose one backend:
+**Free by default.** When no backend is chosen, the first search makes Whales start **SearXNG** for you, privately on
+this Mac in Docker:
+- **No key, account or cost.** It needs Docker Desktop or OrbStack installed. If Docker isn't running, Whales starts it.
+- **First start** downloads the SearXNG image, about 100 MB.
+- **While running:** the container is reachable only from this Mac, and Whales stops it when you quit.
+- **You can also** press **Start now** on Models → Web search.
+
+Or, on **Models → Web search**, choose one backend:
 - **Brave Search:** needs an API key.
 - **Tavily:** needs an API key.
 - **SearXNG:** your own instance, no key.

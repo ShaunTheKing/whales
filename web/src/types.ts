@@ -276,5 +276,13 @@ export interface SearchStatus {
     binaryPath?: string
     key: 'keychain' | 'env' | 'none'
     program?: { path?: string; error?: string }
+    managed?: boolean
+  }
+  /** Whales' own SearXNG in Docker (present when it is the backend or none is chosen). */
+  managed?: {
+    state: 'no-docker' | 'docker-stopped' | 'not-created' | 'stopped' | 'starting' | 'running' | 'error'
+    url?: string
+    image: string
+    detail?: string
   }
 }

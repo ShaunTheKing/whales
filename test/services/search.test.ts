@@ -32,7 +32,7 @@ async function setup(t: { after(fn: () => Promise<void>): void }, endpoints: Rec
   const app = await createApp({
     config: { ...defaultConfig(), dataDir: dir },
     storePath: ':memory:',
-    services: { checkpoints: false, routines: false, market: false, providers: false, search: { secrets, endpoints } },
+    services: { checkpoints: false, routines: false, market: false, providers: false, search: { secrets, endpoints, managed: false } },
   })
   t.after(async () => {
     await app.stop()
@@ -206,7 +206,7 @@ echo '{"ok":true,"content":"S1 ...","meta":{"results":[{"url":"https://a.example
   const app = await createApp({
     config: { ...defaultConfig(), dataDir: appDir },
     storePath: ':memory:',
-    services: { checkpoints: false, routines: false, market: false, providers: false, search: { secrets: new MemorySecrets(), programDirs: [bin] } },
+    services: { checkpoints: false, routines: false, market: false, providers: false, search: { secrets: new MemorySecrets(), programDirs: [bin], managed: false } },
   })
   t.after(async () => {
     await app.stop()

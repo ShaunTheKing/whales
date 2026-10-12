@@ -25,6 +25,15 @@ export interface SearchConfig extends BaseRecord {
   baseUrl?: string
   /** DonSeTch: absolute path of the `donsetch` program; absent = auto-detect. */
   binaryPath?: string
+  /** SearXNG run by Whales in Docker (baseUrl is then the container's local address). */
+  managed?: boolean
+}
+
+export interface ManagedSearxngStatus {
+  state: 'no-docker' | 'docker-stopped' | 'not-created' | 'stopped' | 'starting' | 'running' | 'error'
+  url?: string
+  image: string
+  detail?: string
 }
 
 export interface SearchStatus {
@@ -37,7 +46,10 @@ export interface SearchStatus {
     key: 'keychain' | 'env' | 'none'
     /** DonSeTch: the program that will run, or why none was found. */
     program?: { path?: string; error?: string }
+    managed?: boolean
   }
+  /** The Whales-managed SearXNG (shown when it is the backend, or when no backend is chosen yet). */
+  managed?: ManagedSearxngStatus
 }
 
 export interface SearchResult {
@@ -52,8 +64,10 @@ export interface SearchService {
   status(): Promise<SearchStatus>
   configure(input: { kind: SearchKind; baseUrl?: string; apiKey?: string; binaryPath?: string }): Promise<SearchStatus>
   clearKey(): Promise<void>
-  /** Remove the backend: agents' web_search then explains how to set one up. */
+  /** Remove the backend (and Whales' SearXNG container, if any). With none chosen, search uses managed SearXNG. */
   disable(): Promise<void>
+  /** Start (installing on first use) the Whales-managed SearXNG and make it the search backend. */
+  useManagedSearxng(): Promise<SearchStatus>
   search(query: string, opts?: { count?: number; signal?: AbortSignal }): Promise<SearchResult[]>
   /** One real query ("Whales test") to check the backend and key. */
   test(): Promise<{ ok: boolean; results: number; error?: string }>
