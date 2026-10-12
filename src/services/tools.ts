@@ -2,6 +2,7 @@ import { Service, type Context } from 'cordis'
 import type { PermissionMode } from '../contracts/core.ts'
 import type { Tool, ToolCall, ToolResult, ToolSet, ToolSpec, ToolsService } from '../contracts/tools.ts'
 import { isToolName } from '../core/ids.ts'
+import { roomScopeOf } from '../core/scope.ts'
 
 /**
  * Per-agent `tools` service. SECURITY: `invoke` is the only path from a model to a tool's side effects.
@@ -9,7 +10,10 @@ import { isToolName } from '../core/ids.ts'
  * running, side-effecting calls are refused (fail closed).
  */
 export class ToolsRegistry extends Service implements ToolsService {
+  /** Tools available in every turn. */
   private tools = new Map<string, Tool>()
+  /** Room-scoped tools (registered by room plugins), only offered in that room's turns. */
+  private roomTools = new Map<string, Map<string, Tool>>()
   /** The agent context; `this.ctx` is the caller's context inside methods. */
   private actx: Context
 
@@ -22,11 +26,16 @@ export class ToolsRegistry extends Service implements ToolsService {
   register(tool: Tool): () => void {
     const name = tool.spec.name
     if (!isToolName(name)) throw new TypeError(`tools: invalid tool name ${JSON.stringify(name)}`)
-    if (this.tools.has(name)) throw new Error(`tools: "${name}" is already registered`)
+    const roomId = roomScopeOf(this.ctx)
+    if (this.tools.has(name) || (roomId !== undefined && this.roomTools.get(roomId)?.has(name))) {
+      throw new Error(`tools: "${name}" is already registered`)
+    }
     const dispose = this.ctx.effect(() => {
-      this.tools.set(name, tool)
+      const map = roomId === undefined ? this.tools : this.roomMap(roomId)
+      map.set(name, tool)
       return () => {
-        if (this.tools.get(name) === tool) this.tools.delete(name)
+        if (map.get(name) === tool) map.delete(name)
+        if (roomId !== undefined && map.size === 0 && this.roomTools.get(roomId) === map) this.roomTools.delete(roomId)
       }
     }, `tool:${name}`)
     return () => void dispose()
@@ -37,17 +46,26 @@ export class ToolsRegistry extends Service implements ToolsService {
   }
 
   forTurn(opts: { roomId?: string }): ToolSet {
-    const specs = this.list()
-    const allowed = new Set(specs.map((spec) => spec.name))
+    // Snapshot: a room tool whose name clashes with an agent-wide tool is skipped (agent-wide wins).
+    const visible = new Map(this.tools)
+    if (opts.roomId !== undefined) {
+      for (const [name, tool] of this.roomTools.get(opts.roomId) ?? []) if (!visible.has(name)) visible.set(name, tool)
+    }
     return {
-      specs,
-      invoke: (call, signal) => this.invoke(call, signal, allowed, opts.roomId),
+      specs: [...visible.values()].map((tool) => tool.spec),
+      invoke: (call, signal) => this.invoke(call, signal, visible, opts.roomId),
     }
   }
 
-  private async invoke(call: ToolCall, signal: AbortSignal, allowed: Set<string>, roomId: string | undefined): Promise<ToolResult> {
+  private roomMap(roomId: string): Map<string, Tool> {
+    let map = this.roomTools.get(roomId)
+    if (!map) this.roomTools.set(roomId, (map = new Map()))
+    return map
+  }
+
+  private async invoke(call: ToolCall, signal: AbortSignal, visible: Map<string, Tool>, roomId: string | undefined): Promise<ToolResult> {
     const fail = (output: string): ToolResult => ({ output, isError: true })
-    const tool = allowed.has(call.name) ? this.tools.get(call.name) : undefined
+    const tool = visible.get(call.name)
     if (!tool) return fail(`unknown tool: ${call.name}`)
     if (signal.aborted) return fail('cancelled')
 

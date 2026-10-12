@@ -8,7 +8,8 @@ import type {
   RoomNote,
   TeamProposal,
 } from '../contracts/rooms.ts'
-import type { AgentId, RoomId, TurnId } from '../contracts/core.ts'
+import type { AgentId, PluginRef, RoomId, TurnId } from '../contracts/core.ts'
+import { findSecret } from './agents.ts'
 import type { ChatMessage, DriverEvent } from '../contracts/driver.ts'
 import type { AgentHandle } from '../contracts/agents.ts'
 import type { Collection } from '../contracts/store.ts'
@@ -24,6 +25,9 @@ export const ARBITER_INSTRUCTION =
 
 const DEFAULT_HISTORY_LIMIT = 40
 const MAX_MEMBERS = 12
+const MAX_ROOM_PLUGINS = 16
+/** Built-in agent plugins provide per-agent services or bridges; they are not meaningful room-scoped. */
+const ROOM_FORBIDDEN_PLUGINS = new Set(['driver-stub', 'driver-openai-compat', 'memory', 'skills', 'workspace', 'checkpoints', 'bridge-telegram'])
 const MAX_CONTENT = 8000
 const MAX_NOTE = 1000
 const MAX_GOAL = 2000
@@ -136,6 +140,13 @@ export class Rooms extends Service implements RoomsService {
     return event
   }
 
+  /** Saves a room and tells the room plugin loader (and the UI) about it. */
+  private save(room: Room): Room {
+    const saved = this.rooms().put(room)
+    this.own.emit('whales/room-changed', room.id)
+    return saved
+  }
+
   private requireRoom(id: RoomId): Room {
     const room = this.rooms().get(id)
     if (!room) throw new Error(`room ${id} not found`)
@@ -193,7 +204,7 @@ export class Rooms extends Service implements RoomsService {
       name,
       members,
     }
-    return this.rooms().put(room)
+    return this.save(room)
   }
 
   get(id: RoomId): Room | undefined {
@@ -210,6 +221,7 @@ export class Rooms extends Service implements RoomsService {
     const scope = `room:${id}` as const
     this.messages().clear(scope)
     this.notesCol().clear(scope)
+    this.own.emit('whales/room-changed', id)
     return true
   }
 
@@ -222,7 +234,7 @@ export class Rooms extends Service implements RoomsService {
     }
     if (!this.knownAgent(agentId)) throw new Error(`unknown agent ${agentId}`)
     const updated: Room = { ...room, members: [...room.members, agentId] }
-    return this.rooms().put(updated)
+    return this.save(updated)
   }
 
   removeMember(id: RoomId, agentId: AgentId): Room {
@@ -230,7 +242,33 @@ export class Rooms extends Service implements RoomsService {
     if (!room.members.includes(agentId)) throw new Error(`agent ${agentId} is not a member of room ${id}`)
     if (room.members.length <= 1) throw new Error(`cannot remove the last member of room ${id}`)
     const updated: Room = { ...room, members: room.members.filter((m) => m !== agentId) }
-    return this.rooms().put(updated)
+    return this.save(updated)
+  }
+
+  setPlugins(id: RoomId, plugins: PluginRef[]): Room {
+    const room = this.requireRoom(id)
+    if (!Array.isArray(plugins) || plugins.length > MAX_ROOM_PLUGINS) {
+      throw new TypeError(`plugins must be an array of at most ${MAX_ROOM_PLUGINS} entries`)
+    }
+    const seen = new Set<string>()
+    const refs: PluginRef[] = []
+    for (const ref of plugins) {
+      if (typeof ref !== 'object' || ref === null || typeof ref.name !== 'string') throw new TypeError('each plugin must be { name, config? }')
+      if (ref.config !== undefined && (typeof ref.config !== 'object' || ref.config === null || Array.isArray(ref.config))) {
+        throw new TypeError(`plugin ${ref.name}: config must be an object`)
+      }
+      if (seen.has(ref.name)) throw new TypeError(`duplicate plugin ${ref.name}`)
+      seen.add(ref.name)
+      if (!this.agents.catalog.resolve(ref.name)) throw new Error(`unknown plugin "${ref.name}"`)
+      if (ROOM_FORBIDDEN_PLUGINS.has(ref.name)) throw new Error(`plugin "${ref.name}" cannot be used as a room plugin`)
+      refs.push(ref.config === undefined ? { name: ref.name } : { name: ref.name, config: structuredClone(ref.config) })
+    }
+    const secret = findSecret(refs, 'plugins')
+    if (secret) throw new TypeError(`${secret} looks like a secret; store keys in environment variables and reference them by name`)
+    const updated: Room = { ...room }
+    if (refs.length) updated.plugins = refs
+    else delete updated.plugins
+    return this.save(updated)
   }
 
   order(id: RoomId): AgentId[] {

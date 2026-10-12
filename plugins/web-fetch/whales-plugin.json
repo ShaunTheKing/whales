@@ -1,0 +1,8 @@
+{
+  "name": "web-fetch",
+  "version": "1.0.0",
+  "description": "Read a public web page as text. Every URL asks for approval; private and local addresses are refused.",
+  "entry": "index.js",
+  "license": "MIT",
+  "scopes": ["agent", "room"]
+}

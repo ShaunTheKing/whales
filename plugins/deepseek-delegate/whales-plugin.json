@@ -1,0 +1,8 @@
+{
+  "name": "deepseek-delegate",
+  "version": "1.0.0",
+  "description": "Hand a self-contained subtask to a DeepSeek worker model and get its answer back. Each call asks for approval and costs API credits.",
+  "entry": "index.js",
+  "license": "MIT",
+  "scopes": ["agent", "room"]
+}

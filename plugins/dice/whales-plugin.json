@@ -1,0 +1,8 @@
+{
+  "name": "dice",
+  "version": "1.0.0",
+  "description": "Roll dice. A minimal example plugin: one side-effect-free tool.",
+  "entry": "index.js",
+  "license": "MIT",
+  "scopes": ["agent", "room"]
+}

@@ -28,5 +28,7 @@ declare module 'cordis' {
     'whales/approval-resolved'(req: ApprovalRequest): void
     'whales/room-event'(roomId: RoomId, e: RoomEvent): void
     'whales/routine-ran'(run: RoutineRun): void
+    /** A plugin was added to or removed from the catalog (marketplace install/uninstall). */
+    'whales/catalog-changed'(name: string): void
   }
 }

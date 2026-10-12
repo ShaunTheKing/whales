@@ -12,6 +12,8 @@ import { AgentSkills, SkillLibrary, type SkillsConfig } from '../services/skills
 import { Routines, type RoutinesConfig } from '../services/routines.ts'
 import { Workspace } from '../services/workspace.ts'
 import { Rooms, type RoomsConfig } from '../services/rooms.ts'
+import { RoomPlugins } from '../services/room-plugins.ts'
+import { Market, type MarketConfig } from '../services/market.ts'
 import { AgentCheckpoints, Checkpoints, type CheckpointsConfig } from '../services/checkpoints.ts'
 import { TelegramBridge } from '../bridges/telegram.ts'
 
@@ -31,6 +33,7 @@ export interface AppOptions {
     rooms?: RoomsConfig | false
     checkpoints?: CheckpointsConfig | false
     approvals?: false
+    market?: MarketConfig | false
   }
 }
 
@@ -50,8 +53,12 @@ function Whales(ctx: Context, opts: AppOptions & { children: ChildFiber[] }): vo
   if (services.approvals !== false) add('approvals', ctx.plugin(Approvals))
   if (services.skills !== false) add('skills', ctx.plugin(SkillLibrary, services.skills ?? {}))
   if (services.routines !== false) add('routines', ctx.plugin(Routines, services.routines ?? {}))
-  if (services.rooms !== false) add('rooms', ctx.plugin(Rooms, services.rooms ?? {}))
+  if (services.rooms !== false) {
+    add('rooms', ctx.plugin(Rooms, services.rooms ?? {}))
+    add('roomPlugins', ctx.plugin(RoomPlugins))
+  }
   if (services.checkpoints !== false) add('checkpoints', ctx.plugin(Checkpoints, services.checkpoints ?? {}))
+  if (services.market !== false) add('market', ctx.plugin(Market, services.market ?? {}))
   ctx.inject(['agents'], (ctx) => {
     const builtins = {
       'driver-stub': StubDriver,
@@ -85,6 +92,8 @@ export async function createApp(opts: AppOptions): Promise<App> {
     }
     const stuck = children.filter((child) => child.fiber.state !== FIBER_ACTIVE).map((child) => child.name)
     if (stuck.length) throw new Error(`whales: root services did not start: ${stuck.join(', ')}`)
+    // Installed marketplace plugins must be in the catalog before anyone restores agents that use them.
+    await (root.get('market') as Market | undefined)?.ready
   } catch (err) {
     await fiber.dispose()
     throw err

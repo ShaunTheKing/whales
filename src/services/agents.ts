@@ -16,6 +16,7 @@ import type { TurnInfo } from '../contracts/events.ts'
 import { assertAgentId, newId } from '../core/ids.ts'
 import { ToolsRegistry } from './tools.ts'
 import { parseRule } from './rules.ts'
+import { roomScopeOf } from '../core/scope.ts'
 
 /** Cordis `FiberState.ACTIVE`. The enum is an ambient const enum, unusable under isolatedModules. */
 const FIBER_ACTIVE = 2
@@ -123,7 +124,8 @@ export class Runtime extends Service implements AgentRuntime {
   readonly spec: AgentSpec
   /** The agent's own context. `this.ctx` is the *caller's* context inside methods (Cordis tracing). */
   private actx: Context
-  private sections = new Map<string, PromptSection>()
+  /** Keyed by section id; room-scoped sections (from room plugins) are keyed `<roomId>\0<id>`. */
+  private sections = new Map<string, { section: PromptSection; roomId: string | undefined }>()
   private tail: Promise<void> = Promise.resolve()
   /** Turns requested and not yet finished (queued + running). */
   private pending = 0
@@ -142,11 +144,14 @@ export class Runtime extends Service implements AgentRuntime {
   }
 
   addPromptSection(section: PromptSection): () => void {
-    if (this.sections.has(section.id)) throw new Error(`agent ${this.id}: prompt section "${section.id}" already registered`)
+    const roomId = roomScopeOf(this.ctx)
+    const key = roomId === undefined ? section.id : `${roomId}\0${section.id}`
+    if (this.sections.has(key)) throw new Error(`agent ${this.id}: prompt section "${section.id}" already registered`)
+    const entry = { section, roomId }
     const dispose = this.ctx.effect(() => {
-      this.sections.set(section.id, section)
+      this.sections.set(key, entry)
       return () => {
-        if (this.sections.get(section.id) === section) this.sections.delete(section.id)
+        if (this.sections.get(key) === entry) this.sections.delete(key)
       }
     }, `prompt-section:${section.id}`)
     return () => void dispose()
@@ -219,7 +224,10 @@ export class Runtime extends Service implements AgentRuntime {
     const { name, role, instructions } = this.spec
     const parts = [role ? `You are ${name}, ${role}.` : `You are ${name}.`]
     if (instructions) parts.push(instructions)
-    const sections = [...this.sections.values()].sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+    const sections = [...this.sections.values()]
+      .filter((entry) => entry.roomId === undefined || entry.roomId === info.roomId)
+      .map((entry) => entry.section)
+      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
     const promptCtx = { agentId: info.agentId, turnId: info.turnId, prompt: info.prompt, ...(info.roomId === undefined ? {} : { roomId: info.roomId }) }
     for (const section of sections) {
       try {
@@ -354,6 +362,37 @@ export class Agents extends Service implements AgentsService {
     }
     this.root.emit('whales/agent-spawned', handle)
     return handle
+  }
+
+  async update(input: AgentSpec): Promise<AgentHandle | undefined> {
+    validateSpec(input)
+    const spec = structuredClone(input)
+    const agents = this.root.store.collection('agents')
+    const record = agents.get(spec.id)
+    const running = this.handles.get(spec.id)
+    if (!record && !running) throw new Error(`agent ${spec.id} does not exist`)
+    for (const ref of [spec.driver, ...spec.plugins]) {
+      if (!this.catalog.resolve(ref.name)) throw new Error(`agent ${spec.id}: unknown plugin "${ref.name}"`)
+    }
+    const save = () => agents.put({ id: spec.id, scope: 'global', createdAt: record?.createdAt ?? Date.now(), spec })
+    if (!running) {
+      save()
+      return undefined
+    }
+    const old = running.spec
+    await this.dispose(spec.id)
+    try {
+      const handle = await this.spawn(spec, { persist: false })
+      save()
+      return handle
+    } catch (err) {
+      try {
+        await this.spawn(old, { persist: false })
+      } catch (restoreErr) {
+        this.root.logger('agents').warn('agent %s: could not restart with its previous spec: %s', spec.id, errorMessage(restoreErr))
+      }
+      throw err
+    }
   }
 
   get(id: AgentId): AgentHandle | undefined {

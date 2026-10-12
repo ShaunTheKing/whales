@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
@@ -8,6 +7,7 @@ import type { AgentId, TurnId } from '../contracts/core.ts'
 import type { Checkpoint, CheckpointsService, FileChange } from '../contracts/checkpoints.ts'
 import type { AgentSpec } from '../contracts/core.ts'
 import { isAgentId, newId } from '../core/ids.ts'
+import { GIT_OPTIONS, cleanEnv, runGit as run } from '../core/git.ts'
 
 /**
  * SECURITY-CRITICAL (orchestrator-owned). Undo for agent workspaces via a shadow git repository per agent:
@@ -27,42 +27,8 @@ export interface CheckpointsConfig {
   maxPatchBytes?: number
 }
 
-const GIT_OPTIONS = [
-  '-c', 'core.hooksPath=/dev/null',
-  '-c', 'core.fsmonitor=false',
-  '-c', 'core.autocrlf=false',
-  '-c', 'commit.gpgsign=false',
-  '-c', 'gc.auto=0',
-  '-c', 'advice.detachedHead=false',
-]
-
-/** Workspace directory for an agent; shared with the workspace plugin. */
 export function workdirFor(spec: Pick<AgentSpec, 'id' | 'workdir'>, dataDir: string): string {
   return spec.workdir ?? path.join(dataDir, 'workspaces', spec.id)
-}
-
-function cleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {
-    PATH: process.env.PATH ?? '/usr/bin:/bin',
-    LANG: 'C',
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_CONFIG_GLOBAL: os.devNull,
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_AUTHOR_NAME: 'whales',
-    GIT_AUTHOR_EMAIL: 'whales@localhost',
-    GIT_COMMITTER_NAME: 'whales',
-    GIT_COMMITTER_EMAIL: 'whales@localhost',
-  }
-  return { ...env, ...extra }
-}
-
-function run(bin: string, args: string[], env: NodeJS.ProcessEnv, cwd: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile(bin, args, { env, cwd, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
-      if (err) reject(new Error(`git ${args.find((a) => !a.startsWith('-') && !a.includes('=') && !a.includes('/')) ?? ''} failed: ${stderr.trim() || err.message}`))
-      else resolve(stdout)
-    })
-  })
 }
 
 export class Checkpoints extends Service implements CheckpointsService {

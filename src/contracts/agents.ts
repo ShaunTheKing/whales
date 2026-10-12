@@ -77,6 +77,11 @@ export interface AgentsService {
    * Persists the spec unless `persist: false`. Throws if the id is taken or a plugin name is unknown.
    */
   spawn(spec: AgentSpec, opts?: { persist?: boolean }): Promise<AgentHandle>
+  /**
+   * Replace a stored agent's spec (same id), e.g. to add or remove plugins. If the agent is running it is
+   * respawned with the new spec; if that fails the old spec is respawned and the error is thrown. Persists on success.
+   */
+  update(spec: AgentSpec): Promise<AgentHandle | undefined>
   get(id: AgentId): AgentHandle | undefined
   list(): AgentHandle[]
   /** Dispose the agent context (all its plugins, timers, sockets). `forget` also deletes its stored spec. */

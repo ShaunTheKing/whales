@@ -1,4 +1,4 @@
-import type { AgentId, RoomId, TurnId } from './core.ts'
+import type { AgentId, PluginRef, RoomId, TurnId } from './core.ts'
 import type { DriverEvent } from './driver.ts'
 import type { BaseRecord } from './store.ts'
 
@@ -6,6 +6,11 @@ export interface Room extends BaseRecord {
   scope: 'global'
   name: string
   members: AgentId[]
+  /**
+   * Room plugins: loaded into every member's agent context on a room-scoped branch, so the tools and prompt
+   * sections they register exist only during this room's turns (see core/scope.ts). Absent = none.
+   */
+  plugins?: PluginRef[]
 }
 
 /** Scope `room:<id>`. */
@@ -53,6 +58,8 @@ export interface RoomsService {
   list(): Room[]
   addMember(id: RoomId, agentId: AgentId): Room
   removeMember(id: RoomId, agentId: AgentId): Room
+  /** Replace the room's plugins (validated against the catalog; no secret-looking config values). */
+  setPlugins(id: RoomId, plugins: PluginRef[]): Room
   delete(id: RoomId): boolean
   /** Speaking order for the next round; last element is the arbiter. */
   order(id: RoomId): AgentId[]
@@ -76,8 +83,21 @@ declare module './store.ts' {
   }
 }
 
+/** Status of one room plugin in one member (from the room plugin loader). */
+export interface RoomPluginStatus {
+  roomId: RoomId
+  agentId: AgentId
+  plugin: string
+  state: 'active' | 'failed'
+  error?: string
+}
+
 declare module 'cordis' {
   interface Context {
     rooms: RoomsService
+  }
+  interface Events {
+    /** A room was created, deleted, or its members or plugins changed. */
+    'whales/room-changed'(roomId: RoomId): void
   }
 }
