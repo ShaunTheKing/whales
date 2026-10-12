@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Service, type Context } from 'cordis'
 import type {
   Driver,
@@ -69,6 +70,16 @@ type Outcome =
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+/** OpenCode Go endpoints live under opencode.ai/zen/go. */
+export function isOpenCodeGo(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl)
+    return url.hostname === 'opencode.ai' && /^\/zen\/go(\/|$)/.test(url.pathname)
+  } catch {
+    return false
+  }
 }
 
 function isPreset(v: unknown): v is Preset {
@@ -151,6 +162,9 @@ export class OpenAICompatDriver extends Service implements Driver {
   private readonly _providers: ProvidersService | undefined = undefined
   private readonly _providerId: string | undefined = undefined
   private readonly _providerNeedsKey: boolean = false
+  /** OpenCode Go requires a stable per-conversation `x-opencode-session` header (MissingSessionID otherwise). */
+  private readonly _sessionHeader: boolean
+  private readonly _actx: Context
   private readonly _temperature: number | undefined
   private readonly _maxTokens: number | undefined
   private readonly _idleTimeoutMs: number
@@ -312,6 +326,8 @@ export class OpenAICompatDriver extends Service implements Driver {
     this._maxToolRounds = config.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS
     this.endpoint = `${baseUrl}/chat/completions`
     this._host = new URL(this.endpoint).host
+    this._actx = ctx
+    this._sessionHeader = provider?.kind === 'opencode-go' || isOpenCodeGo(baseUrl)
     this.capabilities = {
       tools: this._tools,
       agentic: false,
@@ -327,13 +343,25 @@ export class OpenAICompatDriver extends Service implements Driver {
     return message.split(key).join('[redacted]')
   }
 
-  private buildHeaders(key: string | undefined): Record<string, string> {
+  private buildHeaders(key: string | undefined, input: TurnInput): Record<string, string> {
     const headers: Record<string, string> = {
       'content-type': 'application/json',
       accept: 'text/event-stream',
     }
     if (key !== undefined) headers.authorization = `Bearer ${key}`
+    if (this._sessionHeader) headers['x-opencode-session'] = this.sessionId(input)
     return headers
+  }
+
+  /**
+   * One id per conversation: the agent's DM thread, or the agent's seat in a room. Stable across turns (so the
+   * provider's prompt cache and routing work) but never shared between conversations (a single static id makes the
+   * cache replay answers across unrelated chats). Hashed so agent and room ids are not sent verbatim.
+   */
+  private sessionId(input: TurnInput): string {
+    const agentId = this._actx.get('agent')?.id ?? 'anonymous'
+    const conversation = `whales\0${agentId}\0${input.roomId ?? 'dm'}`
+    return `whales-${createHash('sha256').update(conversation).digest('hex').slice(0, 32)}`
   }
 
   async *run(input: TurnInput, signal: AbortSignal): AsyncIterable<DriverEvent> {
@@ -481,7 +509,7 @@ export class OpenAICompatDriver extends Service implements Driver {
     key: string | undefined,
   ): AsyncGenerator<DriverEvent, Outcome> {
     const body = JSON.stringify(buildBody({ ...this.configForBody(), model: this.model }, input, messages))
-    const headers = this.buildHeaders(key)
+    const headers = this.buildHeaders(key, input)
 
     let attempt = 0
     for (;;) {

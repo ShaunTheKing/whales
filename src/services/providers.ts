@@ -1,6 +1,8 @@
 import { Service, type Context } from 'cordis'
 import type { ProviderInput, ProviderKind, ProviderPreset, ProviderRecord, ProviderView, ProvidersService } from '../contracts/providers.ts'
+import { randomUUID } from 'node:crypto'
 import { MacKeychain, MemorySecrets, assertApiKey, type SecretStore } from '../core/keychain.ts'
+import { isOpenCodeGo } from '../drivers/openai-compat.ts'
 
 /**
  * SECURITY-CRITICAL (orchestrator-owned). Model providers + their keys. Keys go to the SecretStore (macOS Keychain)
@@ -162,6 +164,8 @@ export class Providers extends Service implements ProvidersService {
       if (!key && preset?.needsKey) return { ok: false, models: [], error: 'no API key saved for this provider' }
       const headers: Record<string, string> = { accept: 'application/json' }
       if (key) headers.authorization = `Bearer ${key}`
+      // OpenCode Go rejects requests without a session id; a connection test is its own one-off conversation.
+      if (record.kind === 'opencode-go' || isOpenCodeGo(record.baseUrl)) headers['x-opencode-session'] = `whales-test-${randomUUID()}`
       const res = await fetch(`${record.baseUrl}/models`, { headers, redirect: 'error', signal: AbortSignal.timeout(TEST_TIMEOUT) })
       if (!res.ok) {
         const body = (await res.text().catch(() => '')).slice(0, 300)

@@ -192,3 +192,31 @@ exit 1
   await assert.rejects(kc.set('openai', 'sk-x" ; delete-keychain login', 'x'), /API key/)
   await assert.rejects(kc.get('../evil'), /invalid keychain account/)
 })
+
+test('OpenCode Go: stable x-opencode-session per conversation, different across conversations, absent elsewhere', async (t) => {
+  const { app } = await setup(t)
+  const api = await fakeApi(t)
+  const go = await app.ctx.providers.create({ kind: 'opencode-go', baseUrl: api.baseUrl, models: ['m'], apiKey: KEY })
+  const plain = await app.ctx.providers.create({ kind: 'custom', baseUrl: api.baseUrl, models: ['m'], apiKey: KEY })
+  const spawn = (id: string, provider: string) =>
+    app.ctx.agents.spawn({ id, name: id, seniority: 1, driver: { name: 'driver-openai-compat', config: { provider, tools: false } }, plugins: [] })
+  const ann = await spawn('ann', go.id)
+  const bob = await spawn('bob', go.id)
+  const cy = await spawn('cy', plain.id)
+  const session = async (agent: typeof ann, roomId?: string) => {
+    for await (const _ of agent.runtime!.turn('hi', roomId ? { roomId, history: [] } : {})) void _
+    return api.seen.at(-1)?.['x-opencode-session']
+  }
+  const annDm1 = await session(ann)
+  const annDm2 = await session(ann)
+  const annRoom = await session(ann, 'room_1')
+  const annRoom2 = await session(ann, 'room_2')
+  const bobDm = await session(bob)
+  assert.match(String(annDm1), /^whales-[0-9a-f]{32}$/)
+  assert.equal(annDm1, annDm2, 'same conversation keeps its session')
+  assert.equal(new Set([annDm1, annRoom, annRoom2, bobDm]).size, 4, 'each conversation has its own session')
+  assert.equal(await session(cy), undefined, 'other providers never get the header')
+
+  assert.equal((await app.ctx.providers.test(go.id)).ok, true)
+  assert.match(String(api.seen.at(-1)?.['x-opencode-session']), /^whales-test-/)
+})
