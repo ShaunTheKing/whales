@@ -31,6 +31,7 @@ explains them; if the two disagree, the contracts win and this file gets fixed.
 | D13 | **Distribution = compiled JS** (`tsc -p tsconfig.build.json`, `rewriteRelativeImportExtensions`) | Node refuses to type-strip files under node_modules; the repo itself still runs .ts directly. |
 | D14 | **Desktop = Electron `44.4.5`** (dev dep) + **electron-builder `26.16.1`** (dev dep), unsigned arm64 `.dmg` (user request, Phase 6) | Electron 44 ships Node 24 with `node:sqlite`, so the main process runs the unchanged app + server; the window loads the existing web UI. Neither is a runtime dependency of the CLI package. |
 | D15 | **Plugin marketplace: in-process plugins, approved at install** (user choice over an isolated process) | Simplest model that lets plugins register tools/prompt sections like built-ins. Safety comes from pinning (GitHub repo + full commit), digest-checked staging, no install scripts/dependencies, and user-only install routes — not from isolation. |
+| D17 | **Model providers with keys in the macOS Keychain** (user request) via `/usr/bin/security` (no new dependency) | Keys entered in the UI must persist somewhere safer than files; the Keychain is the OS secret store. Writes use `security -i` with the command on stdin so the key never appears in argv. Env-var names still work (headless, non-macOS). |
 | D16 | **Room plugins = room-scoped branches of each member's context** (`ctx.extend({[ROOM_SCOPE]: roomId})`) | Their tools and prompt sections are filtered per turn by room id, so the same agent keeps a clean DM toolset; agent-wide tools win on a name clash. |
 
 New dependencies need a row in this table first.
@@ -326,9 +327,28 @@ approvals like any other tool.
 Navigation is pinned to the server origin, and http(s) links open in the system browser. New windows, webviews and every
 permission request are denied. A single-instance lock protects the database. Keys are read from `<dataDir>/.env`.
 
+## 10c. Model provider keys (Phase 7)
+
+`core/keychain.ts` and `services/providers.ts` are orchestrator-owned.
+
+- **Storage.** Provider records (store collection `providers`) hold a name, base URL, models and an optional env-var
+  *name*, never a key. Keys are Keychain generic passwords: service `whales.provider`, account = provider id.
+- **Write path.** `security -i` reads `add-generic-password … -w "<key>"` from stdin, and the write is verified by reading
+  it back. Keys must match `^[A-Za-z0-9._~+/=:-]{8,1024}$`, so the interactive line cannot be broken out of.
+- **Read path.** `security find-generic-password -w`, used only by `resolveKey`, which serves the driver and the
+  connection test.
+- **Leak protection.**
+  - Keys travel only to the provider's https base URL; plain http is allowed for loopback only.
+  - Every error from a test or a driver turn is redacted with the key in hand.
+  - No API response contains a key; tests assert this on every route.
+- **Agents.** An agent references a provider by id (`driver.config.provider`), so a key change applies on the next turn
+  without a restart. Deleting a provider that agents still use is refused; a successful delete also deletes its Keychain
+  item.
+
 ## 11. Phase map
 
 0. Design (this doc + contracts). 1. Spike: core, agents, driver-stub, isolation and dispose proof.
 2. Headless: store, openai-compat and ACP drivers, tools, memory, skills, rules, approvals, routines, CLI.
 3. Rooms, team proposals and hires. 4. Server + web UI. 5. Checkpoints, backups, Telegram, packaging.
 6. (user request) Electron desktop app, plugin marketplace with per-chat/per-room plugins, UI redesign.
+7. (user request) Models page: DeepSeek / OpenAI / OpenCode Zen / OpenRouter / Ollama / custom providers, keys in the Keychain.

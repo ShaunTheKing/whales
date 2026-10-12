@@ -28,6 +28,18 @@ The window runs the same server as `whales serve` internally (127.0.0.1, random 
 For model keys, put them in `~/.whales/.env` (e.g. `DEEPSEEK_API_KEY=…`); apps started from Finder don't see your shell's
 environment. The dmg is unsigned: the first time, right-click Whales.app → Open.
 
+## Models
+
+Open **Models** in the sidebar and choose **Add provider**. The options are DeepSeek, OpenAI, OpenCode Zen, OpenRouter,
+Ollama (local), or any OpenAI-compatible URL.
+
+- **Keys.** Paste the API key. It is saved to your Mac's **Keychain** (item "Whales: <name>", service `whales.provider`)
+  and never to Whales' database or files. You can see or delete it in Keychain Access.
+- **Test.** Lists the provider's models with that key. Use it to fill the model list.
+- **New agents.** The New agent form then offers the provider and its models.
+- **Changing a key.** Agents pick up the new key on their next message.
+- **Env vars still work.** Variables like `DEEPSEEK_API_KEY` remain a fallback, e.g. on Linux or for the CLI.
+
 ## Plugin marketplace
 
 Open **Marketplace** in the sidebar:

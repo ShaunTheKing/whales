@@ -14,6 +14,7 @@ import { Workspace } from '../services/workspace.ts'
 import { Rooms, type RoomsConfig } from '../services/rooms.ts'
 import { RoomPlugins } from '../services/room-plugins.ts'
 import { Market, type MarketConfig } from '../services/market.ts'
+import { Providers, type ProvidersConfig } from '../services/providers.ts'
 import { AgentCheckpoints, Checkpoints, type CheckpointsConfig } from '../services/checkpoints.ts'
 import { TelegramBridge } from '../bridges/telegram.ts'
 
@@ -34,6 +35,7 @@ export interface AppOptions {
     checkpoints?: CheckpointsConfig | false
     approvals?: false
     market?: MarketConfig | false
+    providers?: ProvidersConfig | false
   }
 }
 
@@ -49,6 +51,7 @@ function Whales(ctx: Context, opts: AppOptions & { children: ChildFiber[] }): vo
   add('store', ctx.plugin(Store, { path: opts.storePath }))
   add('agents', ctx.plugin(Agents))
   add('rules', ctx.plugin(Rules))
+  if (opts.services?.providers !== false) add('providers', ctx.plugin(Providers, opts.services?.providers ?? {}))
   const services = opts.services ?? {}
   if (services.approvals !== false) add('approvals', ctx.plugin(Approvals))
   if (services.skills !== false) add('skills', ctx.plugin(SkillLibrary, services.skills ?? {}))

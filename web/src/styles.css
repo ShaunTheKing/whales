@@ -49,6 +49,12 @@
 
 /* ---------- base ---------- */
 
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .note-ok {
   background: var(--accent-soft);
   color: var(--accent-strong);

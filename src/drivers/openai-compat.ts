@@ -6,20 +6,24 @@ import type {
   TurnInput,
   ChatMessage,
 } from '../contracts/driver.ts'
+import type { ProviderRecord, ProvidersService } from '../contracts/providers.ts'
 
-export type Preset = 'deepseek' | 'openai' | 'openrouter' | 'ollama'
+export type Preset = 'deepseek' | 'openai' | 'openrouter' | 'ollama' | 'opencode'
 
 export const PRESETS: Record<Preset, { baseUrl: string; apiKeyEnv?: string }> = {
   deepseek: { baseUrl: 'https://api.deepseek.com', apiKeyEnv: 'DEEPSEEK_API_KEY' },
   openai: { baseUrl: 'https://api.openai.com/v1', apiKeyEnv: 'OPENAI_API_KEY' },
   openrouter: { baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: 'OPENROUTER_API_KEY' },
   ollama: { baseUrl: 'http://127.0.0.1:11434/v1' },
+  opencode: { baseUrl: 'https://opencode.ai/zen/v1', apiKeyEnv: 'OPENCODE_API_KEY' },
 }
 
 export interface OpenAICompatConfig {
+  /** Id of a provider saved on the Models page: base URL, default model and Keychain key come from it. */
+  provider?: string
   preset?: Preset
   baseUrl?: string
-  model: string
+  model?: string
   apiKeyEnv?: string
   temperature?: number
   maxTokens?: number
@@ -144,6 +148,9 @@ export class OpenAICompatDriver extends Service implements Driver {
 
   private readonly _baseUrl: string
   private readonly _apiKeyEnv: string | undefined
+  private readonly _providers: ProvidersService | undefined = undefined
+  private readonly _providerId: string | undefined = undefined
+  private readonly _providerNeedsKey: boolean = false
   private readonly _temperature: number | undefined
   private readonly _maxTokens: number | undefined
   private readonly _idleTimeoutMs: number
@@ -162,16 +169,31 @@ export class OpenAICompatDriver extends Service implements Driver {
     let preset: { baseUrl: string; apiKeyEnv?: string } | undefined
     if (config.preset !== undefined) {
       if (!isPreset(config.preset)) {
-        throw new TypeError('driver-openai-compat: preset must be one of deepseek, openai, openrouter, ollama')
+        throw new TypeError('driver-openai-compat: preset must be one of deepseek, openai, openrouter, ollama, opencode')
       }
       preset = PRESETS[config.preset]
     }
 
-    if (typeof config.model !== 'string' || config.model.length === 0) {
+    let provider: ProviderRecord | undefined
+    if (config.provider !== undefined) {
+      if (config.preset !== undefined || config.baseUrl !== undefined || config.apiKeyEnv !== undefined) {
+        throw new TypeError('driver-openai-compat: provider cannot be combined with preset, baseUrl or apiKeyEnv')
+      }
+      const providers = ctx.get('providers')
+      if (!providers) throw new TypeError('driver-openai-compat: the providers service is not running')
+      provider = typeof config.provider === 'string' ? providers.get(config.provider) : undefined
+      if (!provider) throw new TypeError(`driver-openai-compat: unknown provider ${JSON.stringify(config.provider)}`)
+      this._providers = providers
+      this._providerId = provider.id
+      this._providerNeedsKey = provider.kind !== 'ollama' && provider.kind !== 'custom'
+    }
+
+    const model = config.model ?? provider?.defaultModel
+    if (typeof model !== 'string' || model.length === 0) {
       throw new TypeError('driver-openai-compat: model must be a non-empty string')
     }
 
-    const rawBaseUrl = config.baseUrl ?? preset?.baseUrl
+    const rawBaseUrl = config.baseUrl ?? provider?.baseUrl ?? preset?.baseUrl
     if (typeof rawBaseUrl !== 'string' || rawBaseUrl.length === 0) {
       throw new TypeError('driver-openai-compat: baseUrl is required')
     }
@@ -279,7 +301,7 @@ export class OpenAICompatDriver extends Service implements Driver {
       }
     }
 
-    this.model = config.model
+    this.model = model
     this._baseUrl = baseUrl
     this._apiKeyEnv = apiKeyEnv
     this._temperature = config.temperature
@@ -322,7 +344,18 @@ export class OpenAICompatDriver extends Service implements Driver {
 
     const env = this._apiKeyEnv
     let key: string | undefined
-    if (env !== undefined) {
+    if (this._providers && this._providerId !== undefined) {
+      try {
+        key = await this._providers.resolveKey(this._providerId)
+      } catch {
+        key = undefined
+      }
+      if (!key && this._providerNeedsKey) {
+        yield { type: 'error', message: `no API key saved for provider ${this._providerId} (add one on the Models page)` }
+        yield { type: 'done', stopReason: 'error' }
+        return
+      }
+    } else if (env !== undefined) {
       const value = process.env[env]
       if (typeof value !== 'string' || value.length === 0) {
         yield { type: 'error', message: this.scrub(`environment variable ${env} is not set`) }

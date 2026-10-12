@@ -1,38 +1,63 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, ApiError } from '../api.ts'
-import type { AgentSpec, AgentView, PluginRef } from '../types.ts'
+import type { AgentSpec, AgentView, PluginRef, Provider } from '../types.ts'
 
-type DriverChoice = 'deepseek' | 'ollama' | 'stub'
+/** '' = not chosen yet; 'stub' = test driver; anything else is a provider id from the Models page. */
+type DriverChoice = string
 
-const DRIVERS: Record<DriverChoice, { label: string; preset?: string; model?: string }> = {
-  deepseek: { label: 'DeepSeek chat', preset: 'deepseek', model: 'deepseek-chat' },
-  ollama: { label: 'Ollama', preset: 'ollama', model: 'text' },
-  stub: { label: 'Stub (testing)' },
-}
-
-export function NewAgentForm(props: { onCreated(agent: AgentView): void; onCancel(): void }) {
-  const { onCreated, onCancel } = props
+export function NewAgentForm(props: { onCreated(agent: AgentView): void; onCancel(): void; onOpenModels(): void }) {
+  const { onCreated, onCancel, onOpenModels } = props
+  const [providers, setProviders] = useState<Provider[] | undefined>(undefined)
+  const [model, setModel] = useState('')
   const [id, setId] = useState('')
   const [name, setName] = useState('')
   const [role, setRole] = useState('')
   const [instructions, setInstructions] = useState('')
   const [seniority, setSeniority] = useState(1)
-  const [driver, setDriver] = useState<DriverChoice>('deepseek')
+  const [driver, setDriver] = useState<DriverChoice>('')
   const [memory, setMemory] = useState(false)
   const [workspace, setWorkspace] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .providers()
+      .then((res) => {
+        if (cancelled) return
+        setProviders(res.providers)
+        const first = res.providers[0]
+        setDriver(first ? first.id : 'stub')
+        setModel(first?.defaultModel ?? first?.models[0] ?? '')
+      })
+      .catch(() => {
+        if (!cancelled) setProviders([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const provider = providers?.find((p) => p.id === driver)
+
+  const chooseDriver = (value: string): void => {
+    setDriver(value)
+    const next = providers?.find((p) => p.id === value)
+    setModel(next?.defaultModel ?? next?.models[0] ?? '')
+  }
 
   const submit = async (event: React.FormEvent): Promise<void> => {
     event.preventDefault()
     setError(undefined)
     setBusy(true)
     try {
-      const choice = DRIVERS[driver]
+      if (driver !== 'stub' && !provider) throw new Error('Choose a model provider first (add one on the Models page).')
+      if (driver !== 'stub' && !model.trim()) throw new Error('Choose or type a model.')
       const driverRef: PluginRef =
         driver === 'stub'
           ? { name: 'driver-stub', config: { template: 'echo: {prompt}' } }
-          : { name: 'driver-openai-compat', config: { preset: choice.preset, model: choice.model } }
+          : { name: 'driver-openai-compat', config: { provider: driver, model: model.trim() } }
       const plugins: PluginRef[] = []
       if (memory) plugins.push({ name: 'memory' })
       if (workspace) plugins.push({ name: 'workspace' })
@@ -90,13 +115,37 @@ export function NewAgentForm(props: { onCreated(agent: AgentView): void; onCance
             />
           </label>
           <label className="field">
-            <span>Driver</span>
-            <select value={driver} onChange={(e) => setDriver(e.target.value as DriverChoice)}>
-              <option value="deepseek">{DRIVERS.deepseek.label}</option>
-              <option value="ollama">{DRIVERS.ollama.label}</option>
-              <option value="stub">{DRIVERS.stub.label}</option>
+            <span>Model provider</span>
+            <select value={driver} onChange={(e) => chooseDriver(e.target.value)}>
+              {providers === undefined ? <option value="">Loading…</option> : null}
+              {providers?.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.key === 'none' && p.kind !== 'ollama' && p.kind !== 'custom' ? ' (no key yet)' : ''}
+                </option>
+              ))}
+              <option value="stub">Stub (testing, no model)</option>
             </select>
           </label>
+          {providers !== undefined && providers.length === 0 ? (
+            <div className="muted">
+              No model providers yet.{' '}
+              <button type="button" className="btn btn-sm" onClick={onOpenModels}>
+                Add DeepSeek, OpenAI or OpenCode
+              </button>
+            </div>
+          ) : null}
+          {provider ? (
+            <label className="field">
+              <span>Model</span>
+              <input value={model} onChange={(e) => setModel(e.target.value)} list="provider-models" placeholder="model id" />
+              <datalist id="provider-models">
+                {provider.models.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            </label>
+          ) : null}
           <label className="row">
             <input type="checkbox" checked={memory} onChange={(e) => setMemory(e.target.checked)} />
             <span>Memory</span>

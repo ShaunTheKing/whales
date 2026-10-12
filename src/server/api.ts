@@ -3,6 +3,7 @@ import { stream } from 'hono/streaming'
 import type { App } from '../core/app.ts'
 import type { AgentSpec, AgentId, PluginRef, RoomId } from '../contracts/core.ts'
 import type { InstallPreview } from '../contracts/market.ts'
+import type { ProviderInput } from '../contracts/providers.ts'
 import type { AgentHandle } from '../contracts/agents.ts'
 import type { AgentRecord, MessageRecord } from '../contracts/agents.ts'
 import type { Room, RoomMessage, RoomNote, TeamProposal } from '../contracts/rooms.ts'
@@ -22,7 +23,7 @@ export interface AgentView {
   seniority: number
   state: 'stopped' | 'starting' | 'active' | 'failed' | 'disposed'
   persisted: boolean
-  driver: { name: string; model?: string }
+  driver: { name: string; model?: string; provider?: string }
   plugins: string[]
   hiredBy?: string
 }
@@ -77,6 +78,7 @@ function errorResponse(c: Context, err: unknown): Response {
   }
   if (message === 'invalid JSON body') return c.json({ error: message }, 400)
   if (/not approved/.test(message)) return c.json({ error: message }, 403)
+  if (/no secure key storage/.test(message)) return c.json({ error: message }, 400)
   if (/already|not pending|changed|still used by|digest does not match/.test(message)) {
     return c.json({ error: message }, 409)
   }
@@ -104,6 +106,8 @@ function viewFromSpec(spec: AgentSpec, persisted: boolean, state: AgentView['sta
   if (spec.role !== undefined) view.role = spec.role
   const model = driverModel(spec)
   if (model !== undefined) view.driver.model = model
+  const provider = spec.driver.config?.provider
+  if (typeof provider === 'string') view.driver.provider = provider
   if (spec.hiredBy !== undefined) view.hiredBy = spec.hiredBy
   return view
 }
@@ -751,6 +755,97 @@ function registerPlugins(app: App, api: Hono): void {
   })
 }
 
+/**
+ * Model providers (Models page). SECURITY (orchestrator-owned): API keys arrive only in request bodies over the
+ * authenticated API, go straight to the Keychain via the providers service, and are never echoed in a response.
+ */
+function registerProviders(app: App, api: Hono): void {
+  const providers = () => app.ctx.get('providers')
+  const unavailable = (c: Context) => c.json({ error: 'providers service unavailable' }, 503)
+
+  api.get('/providers', async (c) => {
+    const service = providers()
+    if (!service) return unavailable(c)
+    return c.json({ secretStore: service.secretStore, presets: service.presets(), providers: await service.list() })
+  })
+
+  api.post('/providers', async (c) => {
+    const service = providers()
+    if (!service) return unavailable(c)
+    const body = await readJson(c)
+    const input: ProviderInput = { kind: str(body, 'kind') as ProviderInput['kind'] }
+    const name = str(body, 'name')
+    const baseUrl = str(body, 'baseUrl')
+    const models = strArray(body, 'models')
+    const defaultModel = str(body, 'defaultModel')
+    const keyEnv = str(body, 'keyEnv')
+    const apiKey = str(body, 'apiKey')
+    if (name !== undefined) input.name = name
+    if (baseUrl !== undefined) input.baseUrl = baseUrl
+    if (models !== undefined) input.models = models
+    if (defaultModel !== undefined) input.defaultModel = defaultModel
+    if (keyEnv !== undefined) input.keyEnv = keyEnv
+    if (apiKey !== undefined && apiKey !== '') input.apiKey = apiKey
+    return c.json(await service.create(input), 201)
+  })
+
+  api.patch('/providers/:id', async (c) => {
+    const service = providers()
+    if (!service) return unavailable(c)
+    const id = c.req.param('id')
+    if (!service.get(id)) return c.json({ error: `provider ${id} not found` }, 404)
+    const body = await readJson(c)
+    const patch: Parameters<typeof service.update>[1] = {}
+    const name = str(body, 'name')
+    const baseUrl = str(body, 'baseUrl')
+    const models = strArray(body, 'models')
+    const defaultModel = str(body, 'defaultModel')
+    const keyEnv = str(body, 'keyEnv')
+    if (name !== undefined) patch.name = name
+    if (baseUrl !== undefined) patch.baseUrl = baseUrl
+    if (models !== undefined) patch.models = models
+    if (defaultModel !== undefined) patch.defaultModel = defaultModel
+    if (keyEnv !== undefined) patch.keyEnv = keyEnv
+    return c.json(await service.update(id, patch))
+  })
+
+  api.put('/providers/:id/key', async (c) => {
+    const service = providers()
+    if (!service) return unavailable(c)
+    const id = c.req.param('id')
+    if (!service.get(id)) return c.json({ error: `provider ${id} not found` }, 404)
+    const apiKey = str(await readJson(c), 'apiKey')
+    if (apiKey === undefined) throw new TypeError('apiKey is required')
+    await service.setKey(id, apiKey)
+    return c.body(null, 204)
+  })
+
+  api.delete('/providers/:id/key', async (c) => {
+    const service = providers()
+    if (!service) return unavailable(c)
+    const id = c.req.param('id')
+    if (!service.get(id)) return c.json({ error: `provider ${id} not found` }, 404)
+    await service.clearKey(id)
+    return c.body(null, 204)
+  })
+
+  api.post('/providers/:id/test', async (c) => {
+    const service = providers()
+    if (!service) return unavailable(c)
+    const id = c.req.param('id')
+    if (!service.get(id)) return c.json({ error: `provider ${id} not found` }, 404)
+    return c.json(await service.test(id))
+  })
+
+  api.delete('/providers/:id', async (c) => {
+    const service = providers()
+    if (!service) return unavailable(c)
+    const id = c.req.param('id')
+    if (!(await service.delete(id))) return c.json({ error: `provider ${id} not found` }, 404)
+    return c.body(null, 204)
+  })
+}
+
 function registerTeam(app: App, api: Hono): void {
   api.get('/team/proposals', (c) => {
     const proposals = app.ctx.store.collection('teamProposals').list({ order: 'desc' })
@@ -803,6 +898,7 @@ export function createApi(app: App): Hono {
   registerRoutines(app, api)
   registerCheckpoints(app, api)
   registerPlugins(app, api)
+  registerProviders(app, api)
   registerTeam(app, api)
   registerHealth(app, api)
   return api

@@ -8,7 +8,7 @@ export interface AgentView {
   seniority: number
   state: 'stopped' | 'starting' | 'active' | 'failed' | 'disposed'
   persisted: boolean
-  driver: { name: string; model?: string }
+  driver: { name: string; model?: string; provider?: string }
   plugins: string[]
   hiredBy?: string
 }
@@ -201,4 +201,49 @@ export interface RoomPluginStatus {
   plugin: string
   state: 'active' | 'failed'
   error?: string
+}
+
+// ---- model providers (mirrors src/contracts/providers.ts). Keys are never part of these types. ----
+
+export type ProviderKind = 'deepseek' | 'openai' | 'opencode' | 'openrouter' | 'ollama' | 'custom'
+
+export interface ProviderPreset {
+  kind: ProviderKind
+  label: string
+  baseUrl: string
+  keyEnv?: string
+  needsKey: boolean
+  models: string[]
+  docs?: string
+}
+
+export interface Provider {
+  id: string
+  name: string
+  kind: ProviderKind
+  baseUrl: string
+  models: string[]
+  defaultModel?: string
+  keyEnv?: string
+  createdAt: number
+  /** Where the key comes from right now. */
+  key: 'keychain' | 'env' | 'none'
+  usedBy: string[]
+}
+
+export interface ProvidersResponse {
+  /** 'keychain' on macOS; 'none' means keys cannot be saved (use an environment variable instead). */
+  secretStore: 'keychain' | 'memory' | 'none'
+  presets: ProviderPreset[]
+  providers: Provider[]
+}
+
+export interface ProviderInput {
+  kind: ProviderKind
+  name?: string
+  baseUrl?: string
+  models?: string[]
+  defaultModel?: string
+  keyEnv?: string
+  apiKey?: string
 }

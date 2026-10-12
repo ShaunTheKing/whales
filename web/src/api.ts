@@ -1,4 +1,4 @@
-import type { AgentSpec, AgentView, ApprovalDecision, ApprovalRequest, BrowseResult, CatalogEntry, Checkpoint, DmMessage, DriverEvent, FileChange, InstallPreview, InstalledPlugin, MarketSource, PluginRef, Room, RoomEvent, RoomMessage, RoomNote, RoomPluginStatus, ServerEvent } from './types.ts'
+import type { AgentSpec, AgentView, ApprovalDecision, ApprovalRequest, BrowseResult, CatalogEntry, Checkpoint, DmMessage, DriverEvent, FileChange, InstallPreview, InstalledPlugin, MarketSource, Provider, ProviderInput, ProvidersResponse, PluginRef, Room, RoomEvent, RoomMessage, RoomNote, RoomPluginStatus, ServerEvent } from './types.ts'
 
 /**
  * SECURITY (orchestrator-owned). The API token arrives in the URL fragment (`#token=…`, never sent to the
@@ -160,6 +160,19 @@ export const api = {
   install: (preview: InstallPreview) =>
     json<InstalledPlugin>('POST', '/market/install', { previewId: preview.id, digest: preview.digest, acknowledge: true }),
   installed: () => json<InstalledPlugin[]>('GET', '/market/plugins'),
+  /** Model providers. The API key is write-only: send it, never read it back. */
+  providers: () => json<ProvidersResponse>('GET', '/providers'),
+  createProvider: (input: ProviderInput) => json<Provider>('POST', '/providers', input),
+  updateProvider: (id: string, patch: { name?: string; baseUrl?: string; models?: string[]; defaultModel?: string; keyEnv?: string }) =>
+    json<Provider>('PATCH', `/providers/${encodeURIComponent(id)}`, patch),
+  /** Saves (or replaces) the key in the macOS Keychain. */
+  setProviderKey: (id: string, apiKey: string) => json<void>('PUT', `/providers/${encodeURIComponent(id)}/key`, { apiKey }),
+  clearProviderKey: (id: string) => json<void>('DELETE', `/providers/${encodeURIComponent(id)}/key`),
+  /** Lists the provider's models using the saved key; `ok: false` with `error` when the key or URL is wrong. */
+  testProvider: (id: string) => json<{ ok: boolean; models: string[]; error?: string }>('POST', `/providers/${encodeURIComponent(id)}/test`),
+  /** 409 while an agent uses it. Also removes its Keychain item. */
+  deleteProvider: (id: string) => json<void>('DELETE', `/providers/${encodeURIComponent(id)}`),
+
   /** 409 while an agent or room still uses it. */
   uninstall: (name: string) => json<void>('DELETE', `/market/plugins/${encodeURIComponent(name)}`),
 }

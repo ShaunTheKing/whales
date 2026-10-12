@@ -6,6 +6,7 @@ export type Selection =
   | { kind: 'new-agent' }
   | { kind: 'new-room' }
   | { kind: 'market' }
+  | { kind: 'models' }
   | undefined
 
 export function Sidebar(props: {
@@ -102,6 +103,10 @@ export function Sidebar(props: {
       </div>
 
       <div className="sidebar-footer">
+        <button type="button" className={itemClass(selection?.kind === 'models')} onClick={() => onSelect({ kind: 'models' })}>
+          <span aria-hidden="true">◎</span>
+          <span>Models</span>
+        </button>
         <button type="button" className={itemClass(selection?.kind === 'market')} onClick={() => onSelect({ kind: 'market' })}>
           <span aria-hidden="true">⊞</span>
           <span>Marketplace</span>

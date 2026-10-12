@@ -1,6 +1,16 @@
 # Progress
 
-## Status: Phases 0–6 ✅ accepted 2026-10-12. Parked: driver-acp (Claude Code) awaiting dependency approval.
+## Status: Phases 0–7 ✅ accepted 2026-10-12. Parked: driver-acp (Claude Code) awaiting dependency approval.
+
+### Phase 7 (user request: Models in the sidebar, keys saved to the macOS Keychain)
+- `core/keychain.ts`, `services/providers.ts`, driver `provider` config, `/providers` API: orchestrator. Models page:
+  DeepSeek worker (1 call, ~12k tokens), reviewed; New agent form picks provider + model.
+- Evidence: 611/611 tests. Fake `security` binary proves the key goes over stdin, never argv; every providers API
+  response is checked for key leaks; removing redaction makes the test fail. Browser run: provider dialog, DeepSeek saved
+  (key from `.env` env var), New agent form lists it. One real `GET /models` to DeepSeek ran from the auto-test after
+  saving (lists models; not billed).
+- Not verified live: writing to the real login Keychain (deliberately not touched from here). First real save will show
+  the item as "Whales: <name>" in Keychain Access.
 
 ### Phase 6 tasks (user request: Electron app, plugin marketplace, cleaner UI)
 
@@ -100,4 +110,5 @@
 | 3 | specs, workspace tools, memory room notes, reviews, live e2e | 7 calls, ~127k tokens; live DeepSeek ≈ 12k tokens total |
 | 4 | security layer, client, reviews, browser e2e | 6 calls, ~92k tokens; live DeepSeek ≈ 8k tokens |
 | 5 | checkpoints, CLI, packaging, Node 22 check, reviews | 7 calls, ~105k tokens; no live model calls |
+| 7 | keychain + providers + driver + API, integration, browser check | 1 call, ~12k tokens; 1 live GET /models |
 | 6 | market + room scope + desktop + API (~1,300 lines), integration, browser + Electron checks | 3 calls, ~25k tokens; no live model calls |

@@ -9,6 +9,7 @@ import { ChatView } from './components/ChatView.tsx'
 import { RoomView } from './components/RoomView.tsx'
 import { ApprovalTray } from './components/ApprovalTray.tsx'
 import { MarketView } from './components/MarketView.tsx'
+import { ModelsView } from './components/ModelsView.tsx'
 
 type Status = 'connecting' | 'open' | 'closed' | 'unauthorized'
 
@@ -175,12 +176,13 @@ export default function App() {
           <RoomView roomId={selection.id} agents={agents} onDeleted={handleRoomDeleted} onOpenMarket={() => setSelection({ kind: 'market' })} />
         ) : null}
         {selection?.kind === 'new-agent' ? (
-          <NewAgentForm onCreated={handleAgentCreated} onCancel={() => setSelection(undefined)} />
+          <NewAgentForm onCreated={handleAgentCreated} onCancel={() => setSelection(undefined)} onOpenModels={() => setSelection({ kind: 'models' })} />
         ) : null}
         {selection?.kind === 'new-room' ? (
           <NewRoomForm agents={agents} onCreated={handleRoomCreated} onCancel={() => setSelection(undefined)} />
         ) : null}
         {selection?.kind === 'market' ? <MarketView onChanged={handleAgentChanged} /> : null}
+        {selection?.kind === 'models' ? <ModelsView onChanged={handleAgentChanged} /> : null}
         {selection === undefined ? (
           <div className="empty">
             {loading ? (
