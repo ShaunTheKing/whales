@@ -34,6 +34,10 @@ export function tokenize(text: string): string[] {
   return out
 }
 
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -71,6 +75,23 @@ export class Memory extends Service implements MemoryService {
     })
 
     ctx.tools.register(this.buildTool())
+
+    // Notes follow the agent across rooms: after each successful room turn, keep a short note of what this
+    // agent said there (and what it was answering), so later DMs and other rooms can recall it.
+    ctx.on('whales/turn-after', (turn) => {
+      if (turn.agentId !== this.agentId || turn.roomId === undefined || !turn.ok) return
+      if (turn.roomId === 'team-proposal') return
+      const said = turn.output.trim()
+      if (!said) return
+      const roomName = ctx.get('rooms')?.get(turn.roomId)?.name ?? turn.roomId
+      const asked = turn.prompt.split('Latest message from the user:\n').at(-1)?.trim() ?? ''
+      const text = `In room "${roomName}"${asked ? ` (asked: ${clip(asked, 200)})` : ''} you said: ${clip(said, 1400)}`
+      try {
+        this.remember(clip(text, 2000), { tags: ['room'], source: { roomId: turn.roomId, turnId: turn.turnId } })
+      } catch (err) {
+        ctx.logger('memory').warn('could not save room note for %s: %s', this.agentId, err instanceof Error ? err.message : String(err))
+      }
+    })
   }
 
   remember(text: string, opts?: { tags?: string[]; source?: MemoryNote['source'] }): MemoryNote {

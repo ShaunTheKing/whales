@@ -113,7 +113,7 @@ sibling agent kept running.
 | `skills` | root + per-agent plugin | `skills.ts` | Library: list, read, preview, install(hash). The per-agent `skills` plugin (config `{ names }`) folds skill bodies into the prompt. |
 | `rules` | root | `rules.ts` | Sentence rules; pure `evaluate()`. |
 | `approvals` | root | `approvals.ts` | `authorize(action)`: the only gate. Blocks until the user answers. |
-| `rooms` | root | `rooms.ts` | Turn-taking, senior-last arbitration, shared notes, team proposals and hires. |
+| `rooms` | root | `rooms.ts` | Turn-taking (one member at a time, ascending seniority), senior-last arbitration, shared notes, team proposals; hires need approval (strict mode) and use `defaults.cheapDriver`. |
 | `routines` | root | `routines.ts` | Interval check-ins inside allowed windows; quiet mode. |
 | `checkpoints` | root | `checkpoints.ts` | Shadow-git snapshots before and after turns; diff, restore. |
 
@@ -236,8 +236,9 @@ Agents are declared as JSON-serialisable `AgentSpec`s (persisted in `agents`):
 }
 ```
 
-`name` is resolved through `agents.catalog`. Built-in names: `driver-stub`, `driver-openai-compat`,
-`driver-acp`, `memory`, `skills`, `checkpoints`, `bridge-telegram`. A plugin's `config` is validated by
+`name` is resolved through `agents.catalog`. Built-in names: `driver-stub`, `driver-openai-compat` (chat + tool
+calling), `memory` (notes + `remember` tool; auto-notes room turns), `skills`, `workspace` (`list_files`,
+`read_file`, `write_file` confined to the workdir). Planned: `driver-acp`, `checkpoints`, `bridge-telegram`. A plugin's `config` is validated by
 its own `Config` (Standard Schema) when it declares one; otherwise it validates by hand and throws a
 readable error.
 

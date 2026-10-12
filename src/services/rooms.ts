@@ -473,7 +473,14 @@ export class Rooms extends Service implements RoomsService {
     }
 
     const ids: AgentId[] = []
+    // Display names must stay unique too: two agents both shown as "Ana" in a room would be ambiguous.
+    const takenNames = new Set<string>()
+    for (const handle of this.agents.list()) takenNames.add(handle.spec.name.toLowerCase())
+    for (const record of this.store.collection('agents').list()) takenNames.add(record.spec.name.toLowerCase())
     for (const hire of proposal.hires) {
+      let displayName = hire.name
+      for (let n = 2; takenNames.has(displayName.toLowerCase()); n++) displayName = `${hire.name} ${n}`
+      takenNames.add(displayName.toLowerCase())
       const base = slug(hire.name)
       let candidate = base
       let suffix = 2
@@ -483,7 +490,7 @@ export class Rooms extends Service implements RoomsService {
       }
       const spec = {
         id: candidate,
-        name: hire.name,
+        name: displayName,
         role: hire.role,
         seniority: lead.spec.seniority - 1,
         driver: cheapDriver,

@@ -430,3 +430,33 @@ test('disposing the agent removes its memory service', async () => {
   await app.ctx.agents.dispose('a1')
   assert.equal(handle.ctx.get('memory'), undefined)
 })
+
+test('room turns leave a note that follows the agent into DMs', async () => {
+  const { app } = await makeApp()
+  const handle = await app.ctx.agents.spawn(
+    {
+      id: 'lead',
+      name: 'Lead',
+      seniority: 5,
+      driver: { name: 'driver-stub', config: { script: ['Decision: four spaces, no tabs.', 'ok'] } },
+      plugins: [{ name: 'memory' }],
+    },
+    { persist: false },
+  )
+  const rooms = app.ctx.get('rooms')
+  assert.ok(rooms)
+  const room = rooms.create({ name: 'Style', members: ['lead'] })
+  for await (const _ of rooms.post(room.id, 'Tabs or spaces for the python project?')) void _
+  const memory = memoryOf(handle)
+  const notes = memory.list()
+  assert.equal(notes.length, 1)
+  assert.ok(notes[0]?.text.includes('In room "Style"'), notes[0]?.text)
+  assert.ok(notes[0]?.text.includes('Tabs or spaces for the python project?'), notes[0]?.text)
+  assert.ok(notes[0]?.text.includes('four spaces'), notes[0]?.text)
+  assert.deepEqual(notes[0]?.tags, ['room'])
+  assert.equal(notes[0]?.source?.roomId, room.id)
+  // A plain DM turn (no roomId) adds no note, and the room note is recalled for a related question.
+  for await (const _ of handle.runtime?.turn('ok') ?? []) void _
+  assert.equal(memory.list().length, 1)
+  assert.equal(memory.recall('what did we decide about tabs in python')[0]?.note.id, notes[0]?.id)
+})

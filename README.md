@@ -24,6 +24,11 @@ whales chat ada
 whales rules add "deny running commands matching rm *" --agent ada
 whales skills install /path/to/skill-dir        # shows a preview and asks before installing
 whales routines add ada --every 60 --prompt "Anything I should know?" --quiet --window 09:00-18:00
+whales agents add cora --name Cora --seniority 10 --preset deepseek --model deepseek-chat --memory --workspace
+whales rooms create Style --members cora,ana,ben
+whales rooms post <roomId> "Tabs or spaces?"     # members speak in seniority order; the most senior decides
+whales team propose cora "Set up CI"             # the lead drafts a team…
+whales team hire <proposalId>                    # …and nobody is hired until you approve
 whales daemon                                    # runs routines; answer approvals inline
 whales help
 ```

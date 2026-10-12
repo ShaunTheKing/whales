@@ -701,7 +701,7 @@ test('hire denied by global rule without approval request', async () => {
 test('hire name collision appends suffix', async () => {
   const h = await setup({ cheapDriver: { name: 'driver-stub', config: { template: 'hired: {prompt}' } } })
   try {
-    await spawnSpy(h, 'data-diver', 'Existing', 3, 'x')
+    await spawnSpy(h, 'data-diver', 'Data Diver', 3, 'x')
     await spawnSpy(
       h,
       'lead',
@@ -717,6 +717,8 @@ test('hire name collision appends suffix', async () => {
 
     const ids = await h.rooms.hire(proposal.id)
     assert.deepEqual(ids, ['data-diver-2'])
+    // The display name is made unique as well, so the room never shows two "Data Diver"s.
+    assert.equal(h.app.ctx.agents.get('data-diver-2')?.spec.name, 'Data Diver 2')
   } finally {
     await teardown(h)
   }

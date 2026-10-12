@@ -13,6 +13,7 @@ import type { Routine } from '../contracts/routines.ts'
 import type { ApprovalRequest } from '../contracts/approvals.ts'
 import type { DriverEvent, StopReason } from '../contracts/driver.ts'
 import type {} from '../contracts/index.ts'
+import { cmdRooms, cmdTeam } from './rooms.ts'
 
 export interface CliIO {
   stdout: { write(chunk: string): unknown }
@@ -29,6 +30,7 @@ Usage: whales <command> [options]
 Commands:
   agents list                          list persisted agents
   agents add <id> --name <n> [...]     create and persist an agent
+                                       (--memory, --workspace, --skill <s>, --rule "<r>")
   agents remove <id> [--forget]        delete an agent (and its data)
   agents show <id>                     print the stored agent spec
   ask <id> <prompt...>                 run one turn and stream the reply
@@ -44,6 +46,13 @@ Commands:
   routines add <agentId> --every <m> --prompt "<p>" [...]
   routines remove <id>                 remove a routine
   routines run <id>                    run a routine now
+  rooms create <name> --members a,b,c  create a shared room
+  rooms list | history <id> | delete <id>
+  rooms post <id> <message...>         run one round; the most senior member speaks last
+  rooms note <id> <text...>            add a shared note
+  rooms members <id> add|remove <agent>
+  team propose <lead> <goal...>        the lead drafts a team (nothing is hired)
+  team hire <proposalId>               hire the team after your approval
   approvals [--all]                    show the approval audit log
   daemon                               restore agents and run routines
   help                                 show this help
@@ -57,23 +66,23 @@ const DRIVERS = ['openai', 'stub'] as const
 const PRESETS = ['deepseek', 'openai', 'openrouter', 'ollama'] as const
 const MODES: readonly PermissionMode[] = ['ask', 'strict', 'trusted']
 
-class UsageError extends Error {
+export class UsageError extends Error {
   override name = 'UsageError'
 }
 
-class CliError extends Error {
+export class CliError extends Error {
   override name = 'CliError'
 }
 
-function usage(message: string): never {
+export function usage(message: string): never {
   throw new UsageError(message)
 }
 
-function fail(message: string): never {
+export function fail(message: string): never {
   throw new CliError(message)
 }
 
-function errMessage(err: unknown): string {
+export function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
@@ -119,7 +128,7 @@ class LineReader {
   }
 }
 
-interface Ctx {
+export interface Ctx {
   io: CliIO
   lines: LineReader
   app: App
@@ -164,7 +173,7 @@ function installApprovalHandler(ctx: Ctx): () => void {
       const kind = req.action.kind
       const target = req.action.target
       ctx.io.stderr.write(
-        `approval needed: ${req.action.summary} (${kind} ${target}) — [y]es once, [a]lways, [n]o? `,
+        `\napproval needed: ${req.action.summary} (${kind} ${target}) — [y]es once, [a]lways, [n]o? `,
       )
       const line = await ctx.lines.next()
       const answer = (line ?? '').trim().toLowerCase()
@@ -176,7 +185,7 @@ function installApprovalHandler(ctx: Ctx): () => void {
   })
 }
 
-async function spawnStored(ctx: Ctx, id: string): Promise<{ runtime: { turn(prompt: string): AsyncIterable<DriverEvent> } }> {
+export async function spawnStored(ctx: Ctx, id: string): Promise<{ runtime: { turn(prompt: string): AsyncIterable<DriverEvent> } }> {
   const rec = ctx.app.ctx.store.collection('agents').get(id)
   if (!rec) fail(`unknown agent ${id}`)
   try {
@@ -206,6 +215,7 @@ function parseAgentsAdd(args: string[]): {
   apiKeyEnv: string | undefined
   template: string | undefined
   memory: boolean
+  workspace: boolean
   skills: string[]
   rules: string[]
   mode: PermissionMode | undefined
@@ -228,6 +238,7 @@ function parseAgentsAdd(args: string[]): {
         'api-key-env': { type: 'string' },
         template: { type: 'string' },
         memory: { type: 'boolean' },
+        workspace: { type: 'boolean' },
         skill: { type: 'string', multiple: true },
         rule: { type: 'string', multiple: true },
         mode: { type: 'string' },
@@ -278,6 +289,7 @@ function parseAgentsAdd(args: string[]): {
     apiKeyEnv,
     template: parsed.values.template,
     memory: parsed.values.memory === true,
+    workspace: parsed.values.workspace === true,
     skills: parsed.values.skill ?? [],
     rules: parsed.values.rule ?? [],
     mode: mode as PermissionMode | undefined,
@@ -308,6 +320,7 @@ function buildAgentSpec(opts: ReturnType<typeof parseAgentsAdd>): AgentSpec {
 
   const plugins: PluginRef[] = []
   if (opts.memory) plugins.push({ name: 'memory' })
+  if (opts.workspace) plugins.push({ name: 'workspace' })
   if (opts.skills.length > 0) plugins.push({ name: 'skills', config: { names: opts.skills } })
 
   const spec: AgentSpec = {
@@ -886,6 +899,10 @@ async function dispatch(ctx: Ctx, argv: string[]): Promise<number> {
       return cmdSkills(ctx, rest)
     case 'routines':
       return cmdRoutines(ctx, rest)
+    case 'rooms':
+      return cmdRooms(ctx, rest)
+    case 'team':
+      return cmdTeam(ctx, rest)
     case 'approvals':
       return cmdApprovals(ctx, rest)
     case 'daemon':
