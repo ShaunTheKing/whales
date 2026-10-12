@@ -10,6 +10,7 @@ import type { Rule } from '../contracts/rules.ts'
 import type { SkillMeta, SkillPreview, Skill } from '../contracts/skills.ts'
 import type { Routine, RoutineRun } from '../contracts/routines.ts'
 import type { MemoryNote } from '../contracts/memory.ts'
+import type { Checkpoint } from '../contracts/checkpoints.ts'
 import { RuleParseError } from '../contracts/rules.ts'
 import { SkillParseError } from '../services/skills.ts'
 
@@ -551,6 +552,55 @@ function registerRoutines(app: App, api: Hono): void {
   })
 }
 
+function registerCheckpoints(app: App, api: Hono): void {
+  const checkpoints = () => app.ctx.get('checkpoints')
+
+  api.get('/agents/:id/checkpoints', (c) => {
+    const service = checkpoints()
+    if (!service) return c.json({ error: 'checkpoints service unavailable' }, 503)
+    const id = c.req.param('id')
+    if (!agentView(app, id)) return c.json({ error: `agent ${id} not found` }, 404)
+    return c.json(service.list(id))
+  })
+
+  api.post('/agents/:id/checkpoints', async (c) => {
+    const service = checkpoints()
+    if (!service) return c.json({ error: 'checkpoints service unavailable' }, 503)
+    const id = c.req.param('id')
+    if (!agentView(app, id)) return c.json({ error: `agent ${id} not found` }, 404)
+    const body = await readJson(c)
+    const label = str(body, 'label')
+    const checkpoint: Checkpoint = await service.snapshot(id, label || 'manual snapshot', 'manual')
+    return c.json(checkpoint, 201)
+  })
+
+  api.get('/checkpoints/:id/diff', async (c) => {
+    const service = checkpoints()
+    if (!service) return c.json({ error: 'checkpoints service unavailable' }, 503)
+    const id = c.req.param('id')
+    const from = service.get(id)
+    if (!from) return c.json({ error: `checkpoint ${id} not found` }, 404)
+    const to = c.req.query('to')
+    if (to !== undefined) {
+      const target = service.get(to)
+      if (!target) return c.json({ error: `checkpoint ${to} not found` }, 404)
+      if (target.agentId !== from.agentId) {
+        throw new TypeError('checkpoints belong to different agents')
+      }
+    }
+    const result = await service.diff(id, to)
+    return c.json(result)
+  })
+
+  api.post('/checkpoints/:id/restore', async (c) => {
+    const service = checkpoints()
+    if (!service) return c.json({ error: 'checkpoints service unavailable' }, 503)
+    const id = c.req.param('id')
+    const safety: Checkpoint = await service.restore(id, { signal: c.req.raw.signal })
+    return c.json({ safety })
+  })
+}
+
 function registerTeam(app: App, api: Hono): void {
   api.get('/team/proposals', (c) => {
     const proposals = app.ctx.store.collection('teamProposals').list({ order: 'desc' })
@@ -601,6 +651,7 @@ export function createApi(app: App): Hono {
   registerRules(app, api)
   registerSkills(app, api)
   registerRoutines(app, api)
+  registerCheckpoints(app, api)
   registerTeam(app, api)
   registerHealth(app, api)
   return api

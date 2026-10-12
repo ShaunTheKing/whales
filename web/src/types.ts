@@ -93,6 +93,21 @@ export interface ApprovalRequest {
 
 export type ApprovalDecision = 'allow-once' | 'allow-always' | 'deny'
 
+export interface Checkpoint {
+  id: string
+  agentId: string
+  phase: 'before' | 'after' | 'manual'
+  label: string
+  ref: string
+  createdAt: number
+  turnId?: string
+}
+
+export interface FileChange {
+  path: string
+  status: 'added' | 'modified' | 'deleted'
+}
+
 /** Frames on the /api/events WebSocket. */
 export type ServerEvent =
   | { type: 'ready'; data: { agents: { id: string; name: string; state: string }[] } }

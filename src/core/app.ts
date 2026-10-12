@@ -12,6 +12,8 @@ import { AgentSkills, SkillLibrary, type SkillsConfig } from '../services/skills
 import { Routines, type RoutinesConfig } from '../services/routines.ts'
 import { Workspace } from '../services/workspace.ts'
 import { Rooms, type RoomsConfig } from '../services/rooms.ts'
+import { AgentCheckpoints, Checkpoints, type CheckpointsConfig } from '../services/checkpoints.ts'
+import { TelegramBridge } from '../bridges/telegram.ts'
 
 export interface App {
   ctx: Context
@@ -27,6 +29,7 @@ export interface AppOptions {
     skills?: SkillsConfig | false
     routines?: RoutinesConfig | false
     rooms?: RoomsConfig | false
+    checkpoints?: CheckpointsConfig | false
     approvals?: false
   }
 }
@@ -48,6 +51,7 @@ function Whales(ctx: Context, opts: AppOptions & { children: ChildFiber[] }): vo
   if (services.skills !== false) add('skills', ctx.plugin(SkillLibrary, services.skills ?? {}))
   if (services.routines !== false) add('routines', ctx.plugin(Routines, services.routines ?? {}))
   if (services.rooms !== false) add('rooms', ctx.plugin(Rooms, services.rooms ?? {}))
+  if (services.checkpoints !== false) add('checkpoints', ctx.plugin(Checkpoints, services.checkpoints ?? {}))
   ctx.inject(['agents'], (ctx) => {
     const builtins = {
       'driver-stub': StubDriver,
@@ -55,6 +59,8 @@ function Whales(ctx: Context, opts: AppOptions & { children: ChildFiber[] }): vo
       memory: Memory,
       skills: AgentSkills,
       workspace: Workspace,
+      checkpoints: AgentCheckpoints,
+      'bridge-telegram': TelegramBridge,
     }
     for (const [name, plugin] of Object.entries(builtins)) {
       ctx.effect(() => ctx.agents.catalog.register(name, plugin), `catalog:${name}`)

@@ -7,6 +7,8 @@ import type { Scope } from '../contracts/core.ts'
 export interface StoreHandle extends StoreService {
   close(): void
   readonly path: string
+  /** Writes a transactionally consistent copy of the database to `dest` (must not exist). */
+  backupTo(dest: string): void
 }
 
 export interface OpenStoreOptions {
@@ -180,6 +182,11 @@ export function openStore(path: string, opts?: OpenStoreOptions): StoreHandle {
       } finally {
         depth -= 1
       }
+    },
+    backupTo(dest: string): void {
+      assertOpen()
+      if (depth > 0) throw new Error('cannot back up inside a transaction')
+      db.prepare('VACUUM INTO ?').run(dest)
     },
     close(): void {
       if (closed) return

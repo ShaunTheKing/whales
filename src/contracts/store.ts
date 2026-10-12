@@ -38,6 +38,8 @@ export interface StoreService {
   collection<K extends keyof Collections & string>(name: K): Collection<Collections[K] & BaseRecord>
   /** Runs `fn` in a single SQLite transaction (synchronous; node:sqlite is sync). */
   transaction<T>(fn: () => T): T
+  /** Writes a consistent copy of the database to `dest` (a path that must not exist yet). */
+  backupTo(dest: string): void
 }
 
 declare module 'cordis' {

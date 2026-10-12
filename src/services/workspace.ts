@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto'
 import path from 'node:path'
 import type { Context } from 'cordis'
 import type { Tool, ToolResult } from '../contracts/tools.ts'
+import { workdirFor } from './checkpoints.ts'
 
 /**
  * SECURITY-CRITICAL (orchestrator-owned). Per-agent file tools confined to the agent's workdir.
@@ -177,7 +178,7 @@ export const Workspace = {
   inject: ['agent', 'tools'],
   apply(ctx: Context, config: WorkspaceConfig = {}): void {
     const dataDir = ctx.get('config')?.dataDir
-    const workdir = config.dir ?? ctx.agent.spec.workdir ?? (dataDir === undefined ? undefined : path.join(dataDir, 'workspaces', ctx.agent.id))
+    const workdir = config.dir ?? (dataDir === undefined ? ctx.agent.spec.workdir : workdirFor(ctx.agent.spec, dataDir))
     if (workdir === undefined || !path.isAbsolute(workdir)) throw new TypeError('workspace: needs an absolute dir (config.dir, spec.workdir or app config)')
     mkdirSync(workdir, { recursive: true })
     for (const tool of makeWorkspaceTools(workdir)) ctx.tools.register(tool)

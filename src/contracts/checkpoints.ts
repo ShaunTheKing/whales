@@ -26,6 +26,7 @@ export interface FileChange {
 export interface CheckpointsService {
   snapshot(agentId: AgentId, label: string, phase?: Checkpoint['phase'], turnId?: TurnId): Promise<Checkpoint>
   list(agentId: AgentId): Checkpoint[]
+  get(id: string): Checkpoint | undefined
   diff(fromId: string, toId?: string): Promise<{ changes: FileChange[]; patch: string }>
   /** Restores the workdir to the checkpoint. Takes a `manual` safety snapshot first. Gated by approvals. */
   restore(id: string, opts?: { signal?: AbortSignal }): Promise<Checkpoint>

@@ -17,6 +17,7 @@ import { cmdRooms, cmdTeam } from './rooms.ts'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { startServer } from '../server/server.ts'
+import { cmdBackup, cmdCheckpoints, cmdRestore } from './maintenance.ts'
 
 export interface CliIO {
   stdout: { write(chunk: string): unknown }
@@ -57,6 +58,9 @@ Commands:
   team propose <lead> <goal...>        the lead drafts a team (nothing is hired)
   team hire <proposalId>               hire the team after your approval
   approvals [--all]                    show the approval audit log
+  checkpoints list|snapshot|diff|restore <agent|checkpoint>   workspace undo (--label, --to)
+  backup [--out <dir>]                 consistent backup of the data dir
+  restore <dir> [--force] [--yes]      restore a backup (stop serve/daemon first)
   daemon                               restore agents and run routines
   serve [--port n] [--host h] [--dev]  HTTP/WebSocket API + web UI (prints a one-time UI link)
   help                                 show this help
@@ -91,7 +95,7 @@ export function errMessage(err: unknown): string {
 }
 
 /** Lazily-created shared line reader over io.stdin. */
-class LineReader {
+export class LineReader {
   private rl: readline.Interface | undefined
   private iter: AsyncIterator<string> | undefined
   private closed = false
@@ -944,6 +948,10 @@ async function dispatch(ctx: Ctx, argv: string[]): Promise<number> {
       return cmdRoutines(ctx, rest)
     case 'serve':
       return cmdServe(ctx, rest)
+    case 'backup':
+      return cmdBackup(ctx, rest)
+    case 'checkpoints':
+      return cmdCheckpoints(ctx, rest)
     case 'rooms':
       return cmdRooms(ctx, rest)
     case 'team':
@@ -970,6 +978,8 @@ export async function run(argv: string[], io: CliIO): Promise<number> {
   try {
     const config = await loadConfig({ env: io.env, cwd: io.cwd })
     await fs.mkdir(config.dataDir, { recursive: true })
+    // Restore replaces the database, so it must run before the app opens it.
+    if (command === 'restore') return await cmdRestore(io, lines, config, argv.slice(1))
     app = await createApp({
       config,
       storePath: path.join(config.dataDir, 'whales.db'),

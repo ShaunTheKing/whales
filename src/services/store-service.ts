@@ -20,4 +20,8 @@ export class Store extends Service implements StoreService {
   transaction<T>(fn: () => T): T {
     return this.handle.transaction(fn)
   }
+
+  backupTo(dest: string): void {
+    this.handle.backupTo(dest)
+  }
 }

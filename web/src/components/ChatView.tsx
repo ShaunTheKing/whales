@@ -3,6 +3,7 @@ import type { JSX } from 'react'
 import { api, ApiError } from '../api.ts'
 import type { AgentView, DmMessage, DriverEvent } from '../types.ts'
 import { ToolCallView } from './ToolCallView.tsx'
+import { HistoryPanel } from './HistoryPanel.tsx'
 
 interface ToolState {
   id: string
@@ -78,6 +79,7 @@ export function ChatView(props: { agent: AgentView; onChanged(): void }) {
   const [error, setError] = useState<string | undefined>(undefined)
   const [streaming, setStreaming] = useState(false)
   const [prompt, setPrompt] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
   const controllerRef = useRef<AbortController | undefined>(undefined)
   const bodyRef = useRef<HTMLDivElement | null>(null)
 
@@ -206,6 +208,9 @@ export function ChatView(props: { agent: AgentView; onChanged(): void }) {
           </span>
         </div>
         <div className="row">
+          <button className="btn" type="button" onClick={() => setShowHistory((value) => !value)}>
+            History
+          </button>
           <button className="btn" type="button" onClick={() => void toggleState()}>
             {running ? 'Stop' : 'Start'}
           </button>
@@ -214,6 +219,7 @@ export function ChatView(props: { agent: AgentView; onChanged(): void }) {
           </button>
         </div>
       </div>
+      {showHistory ? <HistoryPanel agentId={agent.id} /> : null}
       <div className="panel-body" ref={bodyRef}>
         <div className="messages">
           {history.map((entry) => renderEntry(entry, agent.name))}

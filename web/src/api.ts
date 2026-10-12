@@ -1,4 +1,4 @@
-import type { AgentSpec, AgentView, ApprovalDecision, ApprovalRequest, DmMessage, DriverEvent, Room, RoomEvent, RoomMessage, RoomNote, ServerEvent } from './types.ts'
+import type { AgentSpec, AgentView, ApprovalDecision, ApprovalRequest, Checkpoint, DmMessage, DriverEvent, FileChange, Room, RoomEvent, RoomMessage, RoomNote, ServerEvent } from './types.ts'
 
 /**
  * SECURITY (orchestrator-owned). The API token arrives in the URL fragment (`#token=…`, never sent to the
@@ -130,6 +130,15 @@ export const api = {
 
   approvals: () => json<ApprovalRequest[]>('GET', '/approvals'),
   answer: (id: string, decision: ApprovalDecision) => json<{ ok: true }>('POST', `/approvals/${encodeURIComponent(id)}`, { decision }),
+
+  checkpoints: (agentId: string) => json<Checkpoint[]>('GET', `/agents/${encodeURIComponent(agentId)}/checkpoints`),
+  snapshot: (agentId: string, label: string) => json<Checkpoint>('POST', `/agents/${encodeURIComponent(agentId)}/checkpoints`, { label }),
+  diff: (id: string, to?: string) =>
+    json<{ changes: FileChange[]; patch: string }>(
+      'GET',
+      `/checkpoints/${encodeURIComponent(id)}/diff${to ? `?to=${encodeURIComponent(to)}` : ''}`,
+    ),
+  restore: (id: string) => json<{ safety: Checkpoint }>('POST', `/checkpoints/${encodeURIComponent(id)}/restore`),
 }
 
 export type Unsubscribe = () => void
