@@ -1,33 +1,34 @@
 # Progress
 
-## Current phase: 4 — Server + web UI ✅ accepted 2026-10-12. Next: Phase 5 — Polish (awaiting go-ahead).
+## Status: Phases 0–5 ✅ accepted 2026-10-12. Parked: driver-acp (Claude Code) awaiting dependency approval.
 
-Phases 1–3 ✅ accepted 2026-10-12 (task tables in git history). driver-acp still parked (needs dependency approval).
-
-### Phase 4 tasks
+### Phase 5 tasks
 
 | ID | Task | Who | Status |
 |---|---|---|---|
-| 4.1 | `server/security.ts`, `server/events.ts`, `server/server.ts`, `whales serve` | orchestrator; 35 adversarial tests by DeepSeek | accepted (host/origin/token guards mutation-checked; 413 now closes the connection) |
-| 4.2 | `server/api.ts` REST + NDJSON streaming | DeepSeek tests + impl | accepted (DELETE wiped history without ?forget; conflict codes) |
-| 4.3 | Reject secret-looking values in agent specs | orchestrator | accepted |
-| 4.4 | `web/src/api.ts`, `types.ts` (token handling, streaming client) | orchestrator | accepted |
-| 4.5 | UI shell (App, Sidebar, forms, styles) / views (chat, room, tools, approvals) | 2 DeepSeek workers in parallel | accepted after live fixes |
+| 5.1 | `services/checkpoints.ts` shadow-git undo + per-agent plugin | orchestrator; 20 adversarial tests by DeepSeek + 1 by orchestrator | accepted |
+| 5.2 | `core/backup.ts` + `store.backupTo` | DeepSeek tests + impl (backupTo by orchestrator) | accepted |
+| 5.3 | `bridges/telegram.ts` | DeepSeek tests + impl; orchestrator review | accepted after **deadlock fix** |
+| 5.4 | Checkpoint API routes + History panel | DeepSeek | accepted (added `checkpoints.get`) |
+| 5.5 | CLI `checkpoints`, `backup`, `restore` | orchestrator | accepted |
+| 5.6 | Packaging: compiled `dist/`, `bin`, `files`, `prepack`; Node 22 support | orchestrator | accepted |
 
-### Phase 4 evidence
-- `pnpm typecheck` clean · `pnpm test` 528/528 · `pnpm --filter whales-web build` (≈75 KB gzip) · `pnpm spike` 28/28.
-- Built-in browser against `whales serve`, three live DeepSeek agents: token taken from the fragment and stripped; room round
-  streamed with Cora arbitrating; DM → `write_file` → approval card with content preview → Allow once → STYLE.md written in
-  her workspace; tool box and usage kept after the turn; restarted server rejected the old token (token screen shown).
+### Phase 5 evidence
+- `pnpm test` 584/584 on Node 26 **and on Node 22.18** · typecheck clean · UI builds · spike 28/28.
+- Checkpoint attacks (malicious hooks/fsmonitor/filters in the agent's own .git, GIT_* env injection, symlinks, traversal)
+  all fail; removing the env scrub makes an env-defined `.gitattributes` filter actually execute (test catches it).
+- Telegram: a turn waiting for approval could never be approved from Telegram (poller blocked) — fixed; the regression
+  test hangs with the old code.
+- Real processes: checkpoint diff/restore (with approval) and backup → wipe → restore via the CLI.
+- `pnpm pack` → global install into a temp prefix → installed `whales` creates agents, answers, serves the UI; 7 runtime
+  packages; tarball contains no TypeScript sources, tests, `.env` or staging files.
 
-### Bugs found only by the live browser run (all fixed)
-- `serve` still installed the terminal approval prompt; with no stdin it denied every request in 2 ms (audit trail shows it).
-- Finished DM turns were replaced by text-only history, so tool calls vanished; arbiter badge missing in room history.
-- Text before/after a tool call ran together; a new `#token=` link in an open tab was ignored until reload.
-
-### Known gaps (Phase 4)
-- Tool calls inside room turns are not kept after the round ends (text is).
-- No per-user accounts: one token = full control (single-user, local-first by design).
+### Known gaps (end of plan)
+- driver-acp (Claude Code) not built: needs `@agentclientprotocol/sdk` (+ adapter) approval.
+- Telegram verified only against a mock Bot API (no live bot token).
+- No CI workflow yet (Actions minutes on a private repo — awaiting user OK).
+- Tool calls inside room turns are not persisted after the round; DeepSeek-reasoner + tools not supported.
+- Single-user by design: one API token grants full control.
 
 ## Decisions log
 
@@ -37,6 +38,8 @@ Phases 1–3 ✅ accepted 2026-10-12 (task tables in git history). driver-acp st
 - 2026-10-12 (user) Rooms: rule `allow` is downgraded to `ask`; `deny` still denies.
 - 2026-10-12 (user) Hires: lead proposes, the user approves each via the approvals queue (`agent.hire`).
 - 2026-10-12 `AgentRuntime.busy` = queued or running (contract wording updated).
+- 2026-10-12 Packaging compiles to dist/ (Node will not type-strip inside node_modules); package stays `private`.
+- 2026-10-12 Checkpoints require a known agent (workspace resolved from its spec) and live outside the workspace.
 - 2026-10-12 Server: `ws` instead of `@hono/node-ws` (peer-dep conflict); token always required, even on loopback.
 - 2026-10-12 Agent specs may not contain secret values (same rule as whales.config.json).
 - 2026-10-12 Hires get unique ids AND display names; hire approval uses strict mode (allow rules cannot skip the human).
@@ -64,3 +67,4 @@ Phases 1–3 ✅ accepted 2026-10-12 (task tables in git history). driver-acp st
 | 2 | specs, rules/approvals/agents wiring, security fixes, reviews, e2e | 16 calls, ~183k tokens; live DeepSeek ≈ 400 tokens total |
 | 3 | specs, workspace tools, memory room notes, reviews, live e2e | 7 calls, ~127k tokens; live DeepSeek ≈ 12k tokens total |
 | 4 | security layer, client, reviews, browser e2e | 6 calls, ~92k tokens; live DeepSeek ≈ 8k tokens |
+| 5 | checkpoints, CLI, packaging, Node 22 check, reviews | 7 calls, ~105k tokens; no live model calls |

@@ -4,11 +4,18 @@ A local-first multi-agent workspace on [Cordis](https://github.com/cordiverse/co
 isolated Cordis context with its own plugins (driver, memory, skills, tools); disposing it tears everything down.
 Design: [ARCHITECTURE.md](ARCHITECTURE.md) · status: [PROGRESS.md](PROGRESS.md).
 
-Requires Node ≥ 22.18 and pnpm. No build step: Node runs the TypeScript directly.
+Requires Node ≥ 22.18 (tested on 22.18 and 26) and pnpm. In the repo, Node runs the TypeScript directly.
 
 ```bash
 pnpm install
 pnpm check            # typecheck + tests
+```
+
+### Install as a command
+
+```bash
+pnpm pack                                   # builds dist/ + the web UI, writes whales-0.0.0.tgz
+npm install -g ./whales-0.0.0.tgz           # then: whales help
 ```
 
 ## Web UI
@@ -39,5 +46,15 @@ whales rooms post <roomId> "Tabs or spaces?"     # members speak in seniority or
 whales team propose cora "Set up CI"             # the lead drafts a team…
 whales team hire <proposalId>                    # …and nobody is hired until you approve
 whales daemon                                    # runs routines; answer approvals inline
+whales checkpoints list cora                     # workspace undo: snapshots before/after each turn (--workspace + checkpoints plugin)
+whales checkpoints restore <checkpointId>        # asks first, keeps a safety snapshot
+whales backup --out ~/whales-backups             # consistent copy of the database, skills, workspaces, checkpoints
+whales restore ~/whales-backups/whales-backup-…  # stop serve/daemon first; never deletes (moves old data aside)
 whales help
 ```
+
+## Telegram
+
+Give an agent the `bridge-telegram` plugin with your bot token in `TELEGRAM_BOT_TOKEN` and the chat ids allowed to talk to it:
+`{ "name": "bridge-telegram", "config": { "allowedChatIds": [123456789] } }`. Messages from other chats are ignored;
+approvals for that agent arrive as messages with Allow / Always / Deny buttons.

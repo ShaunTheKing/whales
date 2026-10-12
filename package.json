@@ -9,13 +9,21 @@
     "node": ">=22.18.0"
   },
   "bin": {
-    "whales": "./src/cli/main.ts"
+    "whales": "./dist/cli/main.js"
   },
+  "files": [
+    "dist",
+    "web/dist",
+    "README.md",
+    ".env.example"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test --test-timeout=20000 \"test/**/*.test.ts\"",
     "check": "pnpm typecheck && pnpm test",
-    "spike": "node scripts/spike.ts"
+    "spike": "node scripts/spike.ts",
+    "build": "tsc -p tsconfig.build.json && pnpm --filter whales-web build",
+    "prepack": "pnpm build"
   },
   "dependencies": {
     "@hono/node-server": "2.1.1",

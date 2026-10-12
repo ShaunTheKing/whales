@@ -28,6 +28,7 @@ explains them; if the two disagree, the contracts win and this file gets fixed.
 | D10 | **Checkpoints = shadow git repo per agent** (Phase 5) | Diff and undo for free; never touches the agent's own `.git`. Requires the `git` binary. |
 | D11 | **Memory recall = lexical BM25**, no embeddings | Local, deterministic, no extra model or dependency. The interface allows swapping in embeddings later. |
 | D12 | **Tests: `node --test`** with `node:assert/strict` | Built in. |
+| D13 | **Distribution = compiled JS** (`tsc -p tsconfig.build.json`, `rewriteRelativeImportExtensions`) | Node refuses to type-strip files under node_modules; the repo itself still runs .ts directly. |
 
 New dependencies need a row in this table first.
 
@@ -238,7 +239,7 @@ Agents are declared as JSON-serialisable `AgentSpec`s (persisted in `agents`):
 
 `name` is resolved through `agents.catalog`. Built-in names: `driver-stub`, `driver-openai-compat` (chat + tool
 calling), `memory` (notes + `remember` tool; auto-notes room turns), `skills`, `workspace` (`list_files`,
-`read_file`, `write_file` confined to the workdir). Planned: `driver-acp`, `checkpoints`, `bridge-telegram`. A plugin's `config` is validated by
+`read_file`, `write_file` confined to the workdir). `checkpoints` (snapshots before/after each turn), `bridge-telegram`. Planned: `driver-acp`. A plugin's `config` is validated by
 its own `Config` (Standard Schema) when it declares one; otherwise it validates by hand and throws a
 readable error.
 
