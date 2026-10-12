@@ -175,7 +175,7 @@ export const api = {
 
   /** Web search backend. The key is write-only and goes to the Keychain. */
   searchStatus: () => json<SearchStatus>('GET', '/search'),
-  configureSearch: (input: { kind: SearchKind; baseUrl?: string; apiKey?: string }) => json<SearchStatus>('PUT', '/search', input),
+  configureSearch: (input: { kind: SearchKind; baseUrl?: string; apiKey?: string; binaryPath?: string }) => json<SearchStatus>('PUT', '/search', input),
   clearSearchKey: () => json<void>('DELETE', '/search/key'),
   disableSearch: () => json<void>('DELETE', '/search'),
   /** Runs one real query ("Whales test"); may use a little of the backend's quota. */

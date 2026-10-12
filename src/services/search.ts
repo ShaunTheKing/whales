@@ -1,3 +1,7 @@
+import { execFile } from 'node:child_process'
+import { accessSync, constants, statSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { Service, type Context } from 'cordis'
 import type { SearchBackendInfo, SearchConfig, SearchKind, SearchResult, SearchService, SearchStatus } from '../contracts/search.ts'
 import { MacKeychain, assertApiKey, type SecretStore } from '../core/keychain.ts'
@@ -6,6 +10,11 @@ import { MacKeychain, assertApiKey, type SecretStore } from '../core/keychain.ts
  * SECURITY (orchestrator-owned). The search backend. The query is the only agent-controlled input; the endpoint is
  * fixed per backend (Brave, Tavily) or chosen by the user (SearXNG). Keys come from the Keychain (or an env var) at call
  * time and are redacted from every error.
+ *
+ * DonSeTch (https://github.com/dondai44423/donsetch, AGPL-3.0) is a separate program the user installs; Whales only runs
+ * `donsetch search --json` as a child process (no shell; the query after `--` so it can never become an option; a
+ * minimal environment so none of Whales' keys reach it). Only its search is used: pages are still opened by Whales' own
+ * web_open with its local-network guard.
  */
 
 export interface SearchServiceConfig {
@@ -13,13 +22,86 @@ export interface SearchServiceConfig {
   secrets?: SecretStore | false
   /** Tests only: override the fixed endpoints. */
   endpoints?: Partial<Record<'brave' | 'tavily', string>>
+  /** Tests only: extra directories searched for the `donsetch` program before the defaults. */
+  programDirs?: string[]
 }
 
 export const SEARCH_BACKENDS: SearchBackendInfo[] = [
   { kind: 'brave', label: 'Brave Search', needsKey: true, needsUrl: false, keyEnv: 'BRAVE_SEARCH_API_KEY', docs: 'https://brave.com/search/api/' },
   { kind: 'tavily', label: 'Tavily', needsKey: true, needsUrl: false, keyEnv: 'TAVILY_API_KEY', docs: 'https://tavily.com' },
   { kind: 'searxng', label: 'SearXNG (self-hosted, free)', needsKey: false, needsUrl: true, docs: 'https://docs.searxng.org' },
+  { kind: 'donsetch', label: 'DonSeTch (local, no key)', needsKey: false, needsUrl: false, local: true, docs: 'https://github.com/dondai44423/donsetch' },
 ]
+
+const PROGRAM = 'donsetch'
+const PROGRAM_TIMEOUT = 45_000
+const PROGRAM_OUTPUT = 4 * 1024 * 1024
+
+/** Where Homebrew, npm and cargo put `donsetch`; Finder-launched apps do not inherit the shell's PATH. */
+function defaultProgramDirs(): string[] {
+  const home = os.homedir()
+  return [
+    ...(process.env.PATH ?? '').split(path.delimiter).filter((d) => path.isAbsolute(d)),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    path.join(home, '.npm-global', 'bin'),
+    path.join(home, '.cargo', 'bin'),
+    path.join(home, '.local', 'bin'),
+  ]
+}
+
+function isExecutable(file: string): boolean {
+  try {
+    if (!statSync(file).isFile()) return false
+    accessSync(file, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** The configured program (must be an absolute path to a file named `donsetch`) or the first one found on disk. */
+export function findProgram(configured: string | undefined, extraDirs: string[] = []): { path?: string; error?: string } {
+  if (configured) {
+    if (!path.isAbsolute(configured) || path.basename(configured) !== PROGRAM) return { error: 'the path must be an absolute path to the donsetch program' }
+    return isExecutable(configured) ? { path: configured } : { error: `${configured} is not an executable file` }
+  }
+  for (const dir of [...extraDirs, ...defaultProgramDirs()]) {
+    const candidate = path.join(dir, PROGRAM)
+    if (isExecutable(candidate)) return { path: candidate }
+  }
+  return { error: 'donsetch is not installed (brew tap dondai44423/donsetch && brew install donsetch)' }
+}
+
+/** Environment for the child: enough to find its own cache/config and a proxy, none of Whales' secrets. */
+function programEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin', HOME: os.homedir(), LANG: process.env.LANG ?? 'en_US.UTF-8' }
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value === undefined) continue
+    if (/^(TMPDIR|XDG_[A-Z_]+|HTTPS?_PROXY|https?_proxy|NO_PROXY|no_proxy|DONSETCH_[A-Z0-9_]+|DONSEEK_[A-Z0-9_]+)$/.test(name)) env[name] = value
+  }
+  return env
+}
+
+/** Parse `donsetch search --json` output: {"ok":true,"content":…,"meta":{"results":[{url,title,snippet…}]}}. */
+export function parseProgramOutput(stdout: string, count: number): SearchResult[] {
+  let envelope: unknown
+  try {
+    envelope = JSON.parse(stdout)
+  } catch {
+    throw new Error('donsetch returned something other than JSON (is it up to date? try: donsetch update)')
+  }
+  const e = envelope as { ok?: unknown; error?: { message?: unknown; kind?: unknown }; meta?: { results?: unknown } }
+  if (e.ok === false) throw new Error(`donsetch: ${clean(e.error?.message, 300) || clean(e.error?.kind, 60) || 'search failed'}`)
+  const items = Array.isArray(e.meta?.results) ? e.meta.results : []
+  return items
+    .map((r) => {
+      const x = (typeof r === 'object' && r !== null ? r : {}) as Record<string, unknown>
+      return result(x.title, x.url, x.snippet ?? x.description ?? x.content, x.published ?? x.date)
+    })
+    .filter((r): r is SearchResult => r !== undefined)
+    .slice(0, count)
+}
 
 const CONFIG_ID = 'search'
 const MAX_QUERY = 400
@@ -72,12 +154,14 @@ export class Search extends Service implements SearchService {
   private own: Context
   private secrets: SecretStore | undefined
   private endpoints: typeof ENDPOINTS
+  private programDirs: string[]
 
   constructor(ctx: Context, config: SearchServiceConfig = {}) {
     super(ctx, 'search')
     this.own = ctx
     this.secrets = config.secrets === false ? undefined : (config.secrets ?? (process.platform === 'darwin' ? new MacKeychain() : undefined))
     this.endpoints = { ...ENDPOINTS, ...config.endpoints }
+    this.programDirs = config.programDirs ?? []
   }
 
   async status(): Promise<SearchStatus> {
@@ -93,15 +177,24 @@ export class Search extends Service implements SearchService {
       const env = SEARCH_BACKENDS.find((b) => b.kind === config.kind)?.keyEnv
       if (key === 'none' && env && process.env[env]) key = 'env'
       status.config = { kind: config.kind, key, ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}) }
+      if (config.kind === 'donsetch') {
+        if (config.binaryPath) status.config.binaryPath = config.binaryPath
+        status.config.program = findProgram(config.binaryPath, this.programDirs)
+      }
     }
     return status
   }
 
-  async configure(input: { kind: SearchKind; baseUrl?: string; apiKey?: string }): Promise<SearchStatus> {
+  async configure(input: { kind: SearchKind; baseUrl?: string; apiKey?: string; binaryPath?: string }): Promise<SearchStatus> {
     const backend = SEARCH_BACKENDS.find((b) => b.kind === input?.kind)
     if (!backend) throw new TypeError('search backend must be one of brave, tavily, searxng')
     const record: SearchConfig = { id: CONFIG_ID, scope: 'global', createdAt: Date.now(), kind: backend.kind }
     if (backend.needsUrl) record.baseUrl = checkUrl(input.baseUrl)
+    if (backend.kind === 'donsetch' && input.binaryPath) {
+      const found = findProgram(input.binaryPath)
+      if (found.error) throw new TypeError(found.error)
+      record.binaryPath = input.binaryPath
+    }
     if (input.apiKey !== undefined && input.apiKey !== '') {
       assertApiKey(input.apiKey)
       if (!this.secrets) throw new Error('no secure key storage on this system (the Keychain is macOS-only); set the backend’s environment variable instead')
@@ -140,6 +233,8 @@ export class Search extends Service implements SearchService {
           return await this.tavily(q, count, key!, signal)
         case 'searxng':
           return await this.searxng(q, count, config.baseUrl!, key, signal)
+        case 'donsetch':
+          return await this.donsetch(q, count, config.binaryPath, signal)
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -205,6 +300,32 @@ export class Search extends Service implements SearchService {
       })
       .filter((r): r is SearchResult => r !== undefined)
       .slice(0, count)
+  }
+
+  private donsetch(q: string, count: number, binaryPath: string | undefined, signal: AbortSignal): Promise<SearchResult[]> {
+    const program = findProgram(binaryPath, this.programDirs)
+    if (!program.path) return Promise.reject(new Error(program.error))
+    // DonSeTch caps results at 12; the query goes after `--`, so a query like "--help" is just text.
+    const args = ['search', '--json', '--max-results', String(Math.min(count, 12)), '--deadline-ms', '30000', '--', q]
+    return new Promise((resolve, reject) => {
+      execFile(program.path!, args, { env: programEnv(), timeout: PROGRAM_TIMEOUT, maxBuffer: PROGRAM_OUTPUT, signal, encoding: 'utf8' }, (err, stdout, stderr) => {
+        // A failed search still prints its JSON envelope (with ok:false); prefer that message.
+        if (stdout.trim().startsWith('{')) {
+          try {
+            resolve(parseProgramOutput(stdout, count))
+          } catch (parseErr) {
+            reject(parseErr)
+          }
+          return
+        }
+        if (err) {
+          const reason = signal.aborted ? 'cancelled' : (err as NodeJS.ErrnoException & { killed?: boolean }).killed ? 'timed out' : clean(stderr, 300) || err.message
+          reject(new Error(`donsetch search failed: ${reason}`))
+          return
+        }
+        reject(new Error('donsetch returned no output'))
+      })
+    })
   }
 
   private async json(url: string, init: RequestInit & { signal: AbortSignal }): Promise<unknown> {

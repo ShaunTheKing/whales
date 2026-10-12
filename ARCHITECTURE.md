@@ -360,6 +360,15 @@ permission request are denied. A single-instance lock protects the database. Key
     loopback, link-local, CGNAT, multicast, or mapped or translated IPv6.
   - **Redirects and limits:** redirects are re-checked on every hop (max 5). Pages are capped at 2 MB, 20 s and 20k
     characters returned. Only text types are decoded.
+- **DonSeTch backend.** DonSeTch is AGPL-3.0 and installed by the user, never bundled. Whales runs
+  `donsetch search --json --max-results N --deadline-ms 30000 -- <query>` with `execFile`:
+  - no shell, and the query after `--`, so it can't become a flag;
+  - a minimal environment (PATH, HOME, LANG, TMPDIR, XDG_*, proxy and DONSETCH_* variables), so none of Whales' keys
+    reach it;
+  - a 45 s timeout and a 4 MB output cap.
+
+  A configured path must be absolute and name a `donsetch` file. Only its search is used; its fetch, crawl and bot-wall
+  bypass are not.
 - **Markdown.** `web/src/lib/markdown*.ts(x)` builds React elements. Links render only for http(s) and mailto, open in a
   new window, and the desktop shell sends them to the system browser. A line that is entirely bold becomes a heading.
 

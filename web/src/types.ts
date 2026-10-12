@@ -254,13 +254,15 @@ export interface ProviderInput {
 
 // ---- web search (mirrors src/contracts/search.ts). Keys are write-only. ----
 
-export type SearchKind = 'brave' | 'tavily' | 'searxng'
+export type SearchKind = 'brave' | 'tavily' | 'searxng' | 'donsetch'
 
 export interface SearchBackendInfo {
   kind: SearchKind
   label: string
   needsKey: boolean
   needsUrl: boolean
+  /** Runs a program installed on this Mac (DonSeTch). */
+  local?: boolean
   keyEnv?: string
   docs: string
 }
@@ -268,5 +270,11 @@ export interface SearchBackendInfo {
 export interface SearchStatus {
   backends: SearchBackendInfo[]
   secretStore: 'keychain' | 'memory' | 'none'
-  config?: { kind: SearchKind; baseUrl?: string; key: 'keychain' | 'env' | 'none' }
+  config?: {
+    kind: SearchKind
+    baseUrl?: string
+    binaryPath?: string
+    key: 'keychain' | 'env' | 'none'
+    program?: { path?: string; error?: string }
+  }
 }

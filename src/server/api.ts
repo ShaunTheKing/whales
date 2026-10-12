@@ -882,10 +882,12 @@ function registerSearch(app: App, api: Hono): void {
     const body = await readJson(c)
     const kind = str(body, 'kind')
     if (kind === undefined) throw new TypeError('kind is required')
-    const input: { kind: SearchKind; baseUrl?: string; apiKey?: string } = { kind: kind as SearchKind }
+    const input: { kind: SearchKind; baseUrl?: string; apiKey?: string; binaryPath?: string } = { kind: kind as SearchKind }
     const baseUrl = str(body, 'baseUrl')
     const apiKey = str(body, 'apiKey')
+    const binaryPath = str(body, 'binaryPath')
     if (baseUrl !== undefined) input.baseUrl = baseUrl
+    if (binaryPath !== undefined && binaryPath !== '') input.binaryPath = binaryPath
     if (apiKey !== undefined && apiKey !== '') input.apiKey = apiKey
     return c.json(await service.configure(input))
   })

@@ -16,6 +16,7 @@ export function SearchSettings() {
   const [kind, setKind] = useState<SearchKind>('brave')
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [binaryPath, setBinaryPath] = useState('')
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
@@ -29,6 +30,7 @@ export function SearchSettings() {
       if (next.config) {
         setKind(next.config.kind)
         setBaseUrl(next.config.baseUrl ?? '')
+        setBinaryPath(next.config.binaryPath ?? '')
       }
       setEditing(!next.config)
     } catch (err) {
@@ -51,8 +53,9 @@ export function SearchSettings() {
     setError(undefined)
     setResult(undefined)
     try {
-      const input: { kind: SearchKind; baseUrl?: string; apiKey?: string } = { kind }
+      const input: { kind: SearchKind; baseUrl?: string; apiKey?: string; binaryPath?: string } = { kind }
       if (backend?.needsUrl) input.baseUrl = baseUrl.trim()
+      if (backend?.local && binaryPath.trim()) input.binaryPath = binaryPath.trim()
       if (apiKey) input.apiKey = apiKey
       const next = await api.configureSearch(input)
       if (!mounted.current) return
@@ -143,6 +146,15 @@ export function SearchSettings() {
                 )}
               </div>
               {config.baseUrl ? <div className="mono">{config.baseUrl}</div> : null}
+              {config.program ? (
+                config.program.path ? (
+                  <div className="muted small">
+                    Runs <span className="mono">{config.program.path}</span>
+                  </div>
+                ) : (
+                  <div className="error">{config.program.error}</div>
+                )
+              ) : null}
             </div>
           </div>
         </div>
@@ -167,6 +179,20 @@ export function SearchSettings() {
               <span>Your SearXNG address (JSON output must be enabled)</span>
               <input className="input" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://127.0.0.1:8888" />
             </label>
+          ) : null}
+          {backend?.local ? (
+            <>
+              <div className="warning">
+                DonSeTch runs on your Mac and searches without keys by scraping several search engines (Google, Bing and
+                others), which their terms of service do not allow; they may rate-limit or block you. Whales only uses its
+                search; pages are still opened by Whales' own protected reader. Install it yourself first:
+                <div className="mono" style={{ marginTop: 6 }}>brew tap dondai44423/donsetch &amp;&amp; brew install donsetch</div>
+              </div>
+              <label className="field">
+                <span>Program path (optional; leave empty to find it automatically)</span>
+                <input className="input" value={binaryPath} onChange={(e) => setBinaryPath(e.target.value)} placeholder="/opt/homebrew/bin/donsetch" />
+              </label>
+            </>
           ) : null}
           {backend?.needsKey ? (
             <label className="field">
@@ -201,7 +227,7 @@ export function SearchSettings() {
         </div>
       )}
 
-      {result ? (
+      {result && !(result.error && result.error === config?.program?.error) ? (
         result.ok ? (
           <div className="note-ok">Search works · {result.results} results for a test query</div>
         ) : (

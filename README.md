@@ -46,6 +46,11 @@ On **Models → Web search**, choose one backend:
 - **Brave Search:** needs an API key.
 - **Tavily:** needs an API key.
 - **SearXNG:** your own instance, no key.
+- **DonSeTch:** a local program, no key. Install it yourself first:
+  `brew tap dondai44423/donsetch && brew install donsetch`.
+  - It searches by scraping several search engines, which their terms don't allow; they may rate-limit or block you.
+  - Whales only runs its `search`. Pages are still opened by Whales' own guarded `web_open`.
+  - It runs with a minimal environment, so none of Whales' keys reach it.
 
 Keys are saved to the Keychain. Then switch on **Web search** for an agent (New agent form, or Details → Plugins → Manage)
 or for a room. Agents get two tools:

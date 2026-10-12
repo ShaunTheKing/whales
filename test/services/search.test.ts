@@ -180,3 +180,67 @@ test('address classification and URL checks', () => {
   assert.equal(checkPublicUrl('https://example.com/x').href, 'https://example.com/x')
   assert.equal(htmlToText('<p>a&#33;&#x21;</p>'), 'a!!')
 })
+
+test('DonSeTch: runs the local program safely and maps its JSON results', async (t) => {
+  const { writeFile, chmod, mkdir, readFile } = await import('node:fs/promises')
+  const dir = await mkdtemp(join(tmpdir(), 'whales-donsetch-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const bin = join(dir, 'bin')
+  await mkdir(bin)
+  const program = join(bin, 'donsetch')
+  // Fake donsetch: records argv (one per line) and env, prints a canned envelope; "FAIL" in the query → ok:false.
+  await writeFile(
+    program,
+    `#!/bin/sh
+for a in "$@"; do echo "$a"; done > '${dir}/argv'
+env > '${dir}/env'
+case "$*" in
+  *FAIL*) echo '{"ok":false,"error":{"kind":"transient","message":"all engines rate-limited"}}'; exit 3 ;;
+  *SLOW*) sleep 5 ;;
+esac
+echo '{"ok":true,"content":"S1 ...","meta":{"results":[{"url":"https://a.example/","title":"A <b>one</b>","snippet":"first"},{"url":"ftp://bad","title":"x"},{"url":"https://b.example/","title":"B","snippet":"second"}]}}'
+`,
+  )
+  await chmod(program, 0o755)
+  const appDir = await mkdtemp(join(tmpdir(), 'whales-search-'))
+  const app = await createApp({
+    config: { ...defaultConfig(), dataDir: appDir },
+    storePath: ':memory:',
+    services: { checkpoints: false, routines: false, market: false, providers: false, search: { secrets: new MemorySecrets(), programDirs: [bin] } },
+  })
+  t.after(async () => {
+    await app.stop()
+    await rm(appDir, { recursive: true, force: true })
+  })
+
+  const status = await app.ctx.search.configure({ kind: 'donsetch' })
+  assert.equal(status.config?.program?.path, program)
+  process.env.DEEPSEEK_API_KEY_FOR_TEST = 'sk-should-not-leak'
+  t.after(() => void delete process.env.DEEPSEEK_API_KEY_FOR_TEST)
+
+  const results = await app.ctx.search.search('--help; rm -rf ~', { count: 2 })
+  assert.deepEqual(results, [
+    { title: 'A one', url: 'https://a.example/', snippet: 'first' },
+    { title: 'B', url: 'https://b.example/', snippet: 'second' },
+  ])
+  const argv = (await readFile(join(dir, 'argv'), 'utf8')).trim().split('\n')
+  assert.deepEqual(argv, ['search', '--json', '--max-results', '2', '--deadline-ms', '30000', '--', '--help; rm -rf ~'])
+  const env = await readFile(join(dir, 'env'), 'utf8')
+  assert.ok(!env.includes('sk-should-not-leak'), 'Whales secrets must not reach donsetch')
+
+  await assert.rejects(app.ctx.search.search('FAIL please'), /donsetch: all engines rate-limited/)
+  await assert.rejects(app.ctx.search.configure({ kind: 'donsetch', binaryPath: '/bin/sh' }), /absolute path to the donsetch program/)
+  await assert.rejects(app.ctx.search.configure({ kind: 'donsetch', binaryPath: join(dir, 'nope', 'donsetch') }), /not an executable/)
+  const ctl = new AbortController()
+  const slow = app.ctx.search.search('SLOW', { signal: ctl.signal })
+  setTimeout(() => ctl.abort(), 100)
+  await assert.rejects(slow, /cancelled/)
+})
+
+test('DonSeTch missing: a clear install hint', async (t) => {
+  const { findProgram } = await import('../../src/services/search.ts')
+  const missing = findProgram(undefined, ['/nonexistent-dir'])
+  // On a machine that has donsetch installed this finds it; otherwise it explains how to install.
+  if (!missing.path) assert.match(missing.error ?? '', /brew install donsetch/)
+  void t
+})

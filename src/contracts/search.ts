@@ -4,7 +4,7 @@ import type { BaseRecord } from './store.ts'
  * Live web search for agents (built-in `web-search` plugin). One search backend for the whole app, chosen on the
  * Models page. Its API key lives in the macOS Keychain (account `search-<kind>`), never in records.
  */
-export type SearchKind = 'brave' | 'tavily' | 'searxng'
+export type SearchKind = 'brave' | 'tavily' | 'searxng' | 'donsetch'
 
 export interface SearchBackendInfo {
   kind: SearchKind
@@ -12,6 +12,8 @@ export interface SearchBackendInfo {
   needsKey: boolean
   /** Only SearXNG takes a URL (your own instance). */
   needsUrl: boolean
+  /** Runs a program installed on this Mac (DonSeTch) instead of calling an API. */
+  local?: boolean
   keyEnv?: string
   docs: string
 }
@@ -21,12 +23,21 @@ export interface SearchConfig extends BaseRecord {
   kind: SearchKind
   /** SearXNG instance, e.g. http://127.0.0.1:8888 */
   baseUrl?: string
+  /** DonSeTch: absolute path of the `donsetch` program; absent = auto-detect. */
+  binaryPath?: string
 }
 
 export interface SearchStatus {
   backends: SearchBackendInfo[]
   secretStore: 'keychain' | 'memory' | 'none'
-  config?: { kind: SearchKind; baseUrl?: string; key: 'keychain' | 'env' | 'none' }
+  config?: {
+    kind: SearchKind
+    baseUrl?: string
+    binaryPath?: string
+    key: 'keychain' | 'env' | 'none'
+    /** DonSeTch: the program that will run, or why none was found. */
+    program?: { path?: string; error?: string }
+  }
 }
 
 export interface SearchResult {
@@ -39,7 +50,7 @@ export interface SearchResult {
 
 export interface SearchService {
   status(): Promise<SearchStatus>
-  configure(input: { kind: SearchKind; baseUrl?: string; apiKey?: string }): Promise<SearchStatus>
+  configure(input: { kind: SearchKind; baseUrl?: string; apiKey?: string; binaryPath?: string }): Promise<SearchStatus>
   clearKey(): Promise<void>
   /** Remove the backend: agents' web_search then explains how to set one up. */
   disable(): Promise<void>
