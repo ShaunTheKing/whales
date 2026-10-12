@@ -491,3 +491,16 @@ test('approvals empty', async () => {
     cleanup(tmp)
   }
 })
+
+test('rules list --agent shows rules from the agent spec', async () => {
+  const tmp = makeTmp()
+  try {
+    const add = await cli(tmp, ['agents', 'add', 'sam', '--name', 'Sam', '--driver', 'stub', '--rule', 'deny running commands matching rm *'])
+    assert.equal(add.code, 0, add.err)
+    const listed = await cli(tmp, ['rules', 'list', '--agent', 'sam'])
+    assert.equal(listed.code, 0)
+    assert.ok(listed.out.includes('(spec)\tagent:sam\tdeny running commands matching rm *'), listed.out)
+  } finally {
+    cleanup(tmp)
+  }
+})

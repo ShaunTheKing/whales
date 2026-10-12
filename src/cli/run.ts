@@ -483,12 +483,17 @@ function cmdRulesList(ctx: Ctx, args: string[]): number {
   }
   const agent = parsed.values.agent
   const rules = ctx.app.ctx.rules.list(agent ? `agent:${agent}` : undefined)
-  if (rules.length === 0) {
+  // Rules written in the agent's spec are enforced live but not stored as records; show them too.
+  const specRules = agent ? (ctx.app.ctx.store.collection('agents').get(agent)?.spec.rules ?? []) : []
+  if (rules.length === 0 && specRules.length === 0) {
     ctx.io.stdout.write('no rules\n')
     return 0
   }
   for (const rule of rules) {
     ctx.io.stdout.write(`${rule.id}\t${rule.scope}\t${rule.sentence}\n`)
+  }
+  for (const sentence of specRules) {
+    ctx.io.stdout.write(`(spec)\tagent:${agent}\t${sentence}\n`)
   }
   return 0
 }
