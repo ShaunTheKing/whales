@@ -254,6 +254,9 @@ readable error.
   `static inject = [...]` and `constructor(ctx: Context, config) { super(ctx, 'foo'); ... }`.
 - Cordis's `FiberState` is an ambient `const enum`, which `isolatedModules` forbids. Compare
   against the numbers via the local constants in `core/` if needed.
+- **No JS `#private` fields on Services** — use the TS `private` keyword. `ctx.get(name)` and `ctx.name`
+  return a Cordis tracing Proxy, and `#private` access through a Proxy throws `TypeError`. For the same
+  reason, never compare `ctx.foo === ctx.get('foo')`.
 - Long-lived resources only through `ctx.effect` / `ctx.on` (§3). Nothing global or module-level mutable.
 - No `any` (use `unknown` and narrow). No non-null `!` on external data. No swallowed errors: either
   rethrow, return as an `error` event / `isError` result, or `ctx.logger('x').warn(...)` with context.
