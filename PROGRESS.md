@@ -1,31 +1,33 @@
 # Progress
 
-## Current phase: 3 — Rooms ✅ accepted 2026-10-12. Next: Phase 4 — Server + web UI (awaiting go-ahead).
+## Current phase: 4 — Server + web UI ✅ accepted 2026-10-12. Next: Phase 5 — Polish (awaiting go-ahead).
 
-Phases 1 and 2 ✅ accepted 2026-10-12 (task tables in git history). driver-acp still parked (needs dependency approval).
+Phases 1–3 ✅ accepted 2026-10-12 (task tables in git history). driver-acp still parked (needs dependency approval).
 
-### Phase 3 tasks
+### Phase 4 tasks
 
 | ID | Task | Who | Status |
 |---|---|---|---|
-| 3.1 | Tool calling in driver-openai-compat (streamed fragments, multi-round loop) | DeepSeek tests + impl; orchestrator review | accepted (round-limit fix: refuse before executing) |
-| 3.2 | `services/workspace.ts` list/read/write files, confined + gated | orchestrator; adversarial tests by DeepSeek | accepted (symlink escape mutation-checked) |
-| 3.3 | `services/rooms.ts` rounds, seniority order, arbiter, notes, team propose/hire | DeepSeek tests + impl; orchestrator review | accepted (prompt was missing the user message; fixed) |
-| 3.4 | Room turns → memory notes (memory follows the agent across rooms) | orchestrator | accepted (gap found in the live run) |
-| 3.5 | CLI `rooms …`, `team …`, `agents add --workspace` | DeepSeek tests + impl | accepted |
+| 4.1 | `server/security.ts`, `server/events.ts`, `server/server.ts`, `whales serve` | orchestrator; 35 adversarial tests by DeepSeek | accepted (host/origin/token guards mutation-checked; 413 now closes the connection) |
+| 4.2 | `server/api.ts` REST + NDJSON streaming | DeepSeek tests + impl | accepted (DELETE wiped history without ?forget; conflict codes) |
+| 4.3 | Reject secret-looking values in agent specs | orchestrator | accepted |
+| 4.4 | `web/src/api.ts`, `types.ts` (token handling, streaming client) | orchestrator | accepted |
+| 4.5 | UI shell (App, Sidebar, forms, styles) / views (chat, room, tools, approvals) | 2 DeepSeek workers in parallel | accepted after live fixes |
 
-### Phase 3 evidence
-- `pnpm typecheck` clean · `pnpm test` 480/480 · `pnpm spike` 28/28.
-- Acceptance test (3 agents, no overlapping turns, senior last with arbiter instruction, sees the others' replies)
-  passes and fails when seniority order is reversed.
-- Live DeepSeek, real processes: Ana (tabs) vs Ben (spaces) → Cora (seniority 10) speaks last and rules "spaces, four
-  per level" addressing both; in a later DM Cora recalls the room decision from memory, calls `write_file`, the CLI
-  asks for approval (path + size), and STYLE.md is written inside her workspace only; `team propose` → approval →
-  2 hires on the cheap driver (seniority 9, hiredBy cora, ask mode), a hire answers who hired it and why.
+### Phase 4 evidence
+- `pnpm typecheck` clean · `pnpm test` 528/528 · `pnpm --filter whales-web build` (≈75 KB gzip) · `pnpm spike` 28/28.
+- Built-in browser against `whales serve`, three live DeepSeek agents: token taken from the fragment and stripped; room round
+  streamed with Cora arbitrating; DM → `write_file` → approval card with content preview → Allow once → STYLE.md written in
+  her workspace; tool box and usage kept after the turn; restarted server rejected the old token (token screen shown).
 
-### Known gaps (Phase 3)
-- DeepSeek-reasoner + tools: reasoning_content is not sent back between tool rounds; use deepseek-chat for tool use.
-- Approvals still answerable only in the asking CLI process (server in Phase 4).
+### Bugs found only by the live browser run (all fixed)
+- `serve` still installed the terminal approval prompt; with no stdin it denied every request in 2 ms (audit trail shows it).
+- Finished DM turns were replaced by text-only history, so tool calls vanished; arbiter badge missing in room history.
+- Text before/after a tool call ran together; a new `#token=` link in an open tab was ignored until reload.
+
+### Known gaps (Phase 4)
+- Tool calls inside room turns are not kept after the round ends (text is).
+- No per-user accounts: one token = full control (single-user, local-first by design).
 
 ## Decisions log
 
@@ -35,6 +37,8 @@ Phases 1 and 2 ✅ accepted 2026-10-12 (task tables in git history). driver-acp 
 - 2026-10-12 (user) Rooms: rule `allow` is downgraded to `ask`; `deny` still denies.
 - 2026-10-12 (user) Hires: lead proposes, the user approves each via the approvals queue (`agent.hire`).
 - 2026-10-12 `AgentRuntime.busy` = queued or running (contract wording updated).
+- 2026-10-12 Server: `ws` instead of `@hono/node-ws` (peer-dep conflict); token always required, even on loopback.
+- 2026-10-12 Agent specs may not contain secret values (same rule as whales.config.json).
 - 2026-10-12 Hires get unique ids AND display names; hire approval uses strict mode (allow rules cannot skip the human).
 - 2026-10-12 Memory auto-notes room turns (tag `room`) so decisions follow the agent into DMs and other rooms.
 - 2026-10-12 Agent spec rules are applied live by `rules.evaluate` (never copied into the store); validated at spawn.
@@ -59,3 +63,4 @@ Phases 1 and 2 ✅ accepted 2026-10-12 (task tables in git history). driver-acp 
 | 1 | review, 4 Cordis probes, agents/tools/app (~350 lines) | 11 calls, ~102k tokens (~45k in / ~57k out; 21k wasted by the reasoner retry) |
 | 2 | specs, rules/approvals/agents wiring, security fixes, reviews, e2e | 16 calls, ~183k tokens; live DeepSeek ≈ 400 tokens total |
 | 3 | specs, workspace tools, memory room notes, reviews, live e2e | 7 calls, ~127k tokens; live DeepSeek ≈ 12k tokens total |
+| 4 | security layer, client, reviews, browser e2e | 6 calls, ~92k tokens; live DeepSeek ≈ 8k tokens |

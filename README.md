@@ -11,6 +11,15 @@ pnpm install
 pnpm check            # typecheck + tests
 ```
 
+## Web UI
+
+```bash
+pnpm --filter whales-web build
+node src/cli/main.ts serve            # prints a one-time link: http://127.0.0.1:7777/#token=…
+```
+Open the printed link. The UI streams agent and room replies, shows tool calls, and asks you to approve actions
+(file writes, hires, …) with cards. The API requires the token on every request, even on localhost.
+
 ## CLI
 
 API keys are read from environment variables by name (put them in `.env`, which is git-ignored and loaded

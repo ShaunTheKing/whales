@@ -19,12 +19,43 @@ interface LiveMessage {
   cancelled?: boolean
 }
 
+type Entry = LiveMessage & { id: string }
+
+function fromServer(message: DmMessage): Entry {
+  return { id: message.id, role: message.role, content: message.content, tools: [] }
+}
+
+function renderEntry(entry: Entry, agentName: string) {
+  return (
+    <div key={entry.id} className={entry.role === 'user' ? 'msg msg-user' : 'msg msg-agent'}>
+      <div className="msg-head">
+        {entry.role === 'user' ? 'You' : agentName}
+        {entry.cancelled ? <span className="badge">cancelled</span> : null}
+      </div>
+      {entry.content ? <div className="msg-body">{entry.content}</div> : null}
+      {entry.tools.map((tool) => (
+        <ToolCallView key={tool.id} name={tool.name} input={tool.input} result={tool.result} />
+      ))}
+      {entry.usage ? (
+        <div className="muted">
+          · {entry.usage.inputTokens} in / {entry.usage.outputTokens} out
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function applyEvent(message: LiveMessage, event: DriverEvent): LiveMessage {
   switch (event.type) {
     case 'text':
       return { ...message, content: message.content + event.delta }
     case 'tool_call':
-      return { ...message, tools: [...message.tools, { id: event.id, name: event.name, input: event.input }] }
+      // Text after a tool call is a new paragraph; without a break the two rounds run together ("now.Done").
+      return {
+        ...message,
+        content: message.content && !/\s$/.test(message.content) ? `${message.content}\n\n` : message.content,
+        tools: [...message.tools, { id: event.id, name: event.name, input: event.input }],
+      }
     case 'tool_result':
       return {
         ...message,
@@ -41,7 +72,8 @@ function applyEvent(message: LiveMessage, event: DriverEvent): LiveMessage {
 
 export function ChatView(props: { agent: AgentView; onChanged(): void }) {
   const { agent, onChanged } = props
-  const [history, setHistory] = useState<DmMessage[]>([])
+  // Server history (text only) plus turns finished in this session, which keep their tool calls and usage.
+  const [history, setHistory] = useState<Entry[]>([])
   const [live, setLive] = useState<LiveMessage | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
   const [streaming, setStreaming] = useState(false)
@@ -57,7 +89,7 @@ export function ChatView(props: { agent: AgentView; onChanged(): void }) {
     api
       .messages(agent.id)
       .then((messages) => {
-        if (!cancelled) setHistory(messages)
+        if (!cancelled) setHistory(messages.map(fromServer))
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
@@ -79,8 +111,10 @@ export function ChatView(props: { agent: AgentView; onChanged(): void }) {
     if (!text || streaming) return
     setPrompt('')
     setError(undefined)
-    setHistory((prev) => [...prev, { id: `local-${Date.now()}`, role: 'user', content: text, createdAt: Date.now(), turnId: '' }])
-    setLive({ role: 'assistant', content: '', tools: [] })
+    setHistory((prev) => [...prev, { id: `local-user-${Date.now()}`, role: 'user', content: text, tools: [] }])
+    // Local copy of the streaming message: state updaters must stay pure (StrictMode runs them twice).
+    let current: LiveMessage = { role: 'assistant', content: '', tools: [] }
+    setLive(current)
     setStreaming(true)
     const controller = new AbortController()
     controllerRef.current = controller
@@ -91,14 +125,18 @@ export function ChatView(props: { agent: AgentView; onChanged(): void }) {
           continue
         }
         if (event.type === 'done') {
-          if (event.stopReason === 'cancelled') setLive((prev) => (prev ? { ...prev, cancelled: true } : prev))
+          if (event.stopReason === 'cancelled') {
+            current = { ...current, cancelled: true }
+            setLive(current)
+          }
           continue
         }
-        setLive((prev) => (prev ? applyEvent(prev, event) : prev))
+        current = applyEvent(current, event)
+        setLive(current)
       }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        setLive((prev) => (prev ? { ...prev, cancelled: true } : prev))
+        current = { ...current, cancelled: true }
       } else if (err instanceof ApiError) {
         setError(err.message)
       } else if (err instanceof Error) {
@@ -109,12 +147,11 @@ export function ChatView(props: { agent: AgentView; onChanged(): void }) {
     } finally {
       controllerRef.current = undefined
       setStreaming(false)
+      // Keep the finished turn as it was streamed (tool calls, usage) instead of reloading text-only history.
+      const finished: Entry = { ...current, id: `local-agent-${Date.now()}` }
       setLive(undefined)
+      setHistory((items) => [...items, finished])
       onChanged()
-      api
-        .messages(agent.id)
-        .then(setHistory)
-        .catch(() => undefined)
     }
   }, [agent.id, onChanged, prompt, streaming])
 
@@ -179,29 +216,8 @@ export function ChatView(props: { agent: AgentView; onChanged(): void }) {
       </div>
       <div className="panel-body" ref={bodyRef}>
         <div className="messages">
-          {history.map((message) => (
-            <div key={message.id} className={message.role === 'user' ? 'msg msg-user' : 'msg msg-agent'}>
-              <div className="msg-head">{message.role === 'user' ? 'You' : agent.name}</div>
-              <div className="msg-body">{message.content}</div>
-            </div>
-          ))}
-          {live ? (
-            <div className={live.role === 'user' ? 'msg msg-user' : 'msg msg-agent'}>
-              <div className="msg-head">
-                {live.role === 'user' ? 'You' : agent.name}
-                {live.cancelled ? <span className="badge">cancelled</span> : null}
-              </div>
-              <div className="msg-body">{live.content}</div>
-              {live.tools.map((tool) => (
-                <ToolCallView key={tool.id} name={tool.name} input={tool.input} result={tool.result} />
-              ))}
-              {live.usage ? (
-                <div className="muted">
-                  · {live.usage.inputTokens} in / {live.usage.outputTokens} out
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+          {history.map((entry) => renderEntry(entry, agent.name))}
+          {live ? renderEntry({ ...live, id: 'live' }, agent.name) : null}
           {error ? <div className="msg msg-system error">{error}</div> : null}
         </div>
       </div>

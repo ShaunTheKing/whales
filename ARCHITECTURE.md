@@ -21,8 +21,8 @@ explains them; if the two disagree, the contracts win and this file gets fixed.
 | D3 | **TypeScript `5.9.3`** for `tsc --noEmit` only | Stable, `erasableSyntaxOnly` supported. TS 7 (native) postponed until it has bedded in. |
 | D4 | **`moduleResolution: Bundler`**, explicit `.ts` extensions in our imports | Cordis's published `.d.ts` use extensionless relative imports, which `NodeNext` cannot resolve (verified: every Cordis export became unresolved). Our own code always writes `./x.ts`, so Node's runtime resolution still works. |
 | D5 | **Store = built-in `node:sqlite`**, one JSON-document table | Zero native deps (no `better-sqlite3` compile). Local scale, so JSON documents + indexed `(collection, scope, created_at)` is enough; schema changes become data migrations. |
-| D6 | **Server = Hono** (+ `@hono/node-server`, `@hono/node-ws`) — added in Phase 4 | Small, typed, WebSocket support, no framework lock-in. |
-| D7 | **Web = React + Vite** in `web/` as a separate pnpm workspace package — Phase 4 | Only the web package pays for the frontend toolchain. |
+| D6 | **Server = Hono 4.13.9** + `@hono/node-server` 2.1.1 + **`ws` 8.22.0** for WebSockets | Small and typed. `@hono/node-ws` only supports node-server 1.x, so upgrades are handled with `ws` directly, which also keeps the auth handshake in our hands. Versions pinned ≥ 2 weeks old. |
+| D7 | **Web = React 19.3 + Vite 8.3** in `web/` (pnpm workspace package `whales-web`), no UI libraries | Only the web package pays for the frontend toolchain; ~75 KB gzipped. |
 | D8 | **Secrets only by env-var *name*** (`apiKeyEnv: "DEEPSEEK_API_KEY"`) | Specs, DB, config, logs and prompts never contain a key. |
 | D9 | **Agentic drivers via ACP** (Agent Client Protocol) | Claude Code and others expose ACP adapters. As the ACP *client*, Whales implements the file and terminal methods itself, so every file write and command passes our rules and approvals and is confined to the agent's workdir. |
 | D10 | **Checkpoints = shadow git repo per agent** (Phase 5) | Diff and undo for free; never touches the agent's own `.git`. Requires the `git` binary. |
@@ -286,6 +286,16 @@ loading, server auth.
 Isolation between agents is **lifecycle-scoped only**: separate service slots and teardown, not an OS
 sandbox. All agents share one process and one user account. Confinement of file and shell access comes
 from the permission gate and workdir checks, not from Cordis.
+
+## 10a. Server security (Phase 4)
+
+`whales serve` binds 127.0.0.1 by default. Every `/api` request needs `Authorization: Bearer <token>` (constant-time
+compare; token from `$WHALES_API_TOKEN`, else random per start) **and** a Host header naming this server (DNS-rebinding
+defence) **and**, when a browser sends one, an Origin equal to this server (or `--dev` Vite origins). Bodies are capped at
+1 MiB (413 closes the connection). `/api/events` (WebSocket) checks Host/Origin at upgrade and requires
+`{"type":"auth","token":…}` as the first message within 5 s. Static UI files are served from `web/dist` by real path with
+CSP, nosniff, no framing and no referrer. The UI receives the token in the URL fragment, keeps it in sessionStorage and strips
+it from the address bar. Binding beyond loopback requires a fixed env token.
 
 ## 11. Phase map
 

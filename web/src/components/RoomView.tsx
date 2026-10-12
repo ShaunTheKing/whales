@@ -24,7 +24,11 @@ function applyEvent(block: LiveBlock, event: DriverEvent): LiveBlock {
     case 'text':
       return { ...block, content: block.content + event.delta }
     case 'tool_call':
-      return { ...block, tools: [...block.tools, { id: event.id, name: event.name, input: event.input }] }
+      return {
+        ...block,
+        content: block.content && !/\s$/.test(block.content) ? `${block.content}\n\n` : block.content,
+        tools: [...block.tools, { id: event.id, name: event.name, input: event.input }],
+      }
     case 'tool_result':
       return {
         ...block,
@@ -256,7 +260,11 @@ export function RoomView(props: { roomId: string; agents: AgentView[]; onDeleted
               <div key={message.id}>
                 {separator}
                 <div className={className}>
-                  <div className="msg-head">{speaker}</div>
+                  {/* The most senior member (last in speaking order) is the room's arbiter. */}
+                  <div className={message.speaker === order.at(-1) ? 'msg-head speaker-arbiter' : 'msg-head'}>
+                    {speaker}
+                    {message.speaker === order.at(-1) ? <span className="badge">arbiter</span> : null}
+                  </div>
                   <div className="msg-body">{message.content}</div>
                 </div>
               </div>

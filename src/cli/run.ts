@@ -975,7 +975,9 @@ export async function run(argv: string[], io: CliIO): Promise<number> {
       storePath: path.join(config.dataDir, 'whales.db'),
     })
     const ctx: Ctx = { io, lines, app }
-    installApprovalHandler(ctx)
+    // In serve mode approvals are answered in the web UI; a terminal prompt reading a closed stdin would
+    // deny every request instantly.
+    if (command !== 'serve') installApprovalHandler(ctx)
     return await dispatch(ctx, argv)
   } catch (err) {
     if (err instanceof UsageError) {
