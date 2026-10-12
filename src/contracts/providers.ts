@@ -6,7 +6,7 @@ import type { BaseRecord } from './store.ts'
  * `keyEnv`. Records never contain a key. Agents reference a provider with
  * `driver: { name: 'driver-openai-compat', config: { provider: '<id>', model: '…' } }`.
  */
-export type ProviderKind = 'deepseek' | 'openai' | 'opencode' | 'openrouter' | 'ollama' | 'custom'
+export type ProviderKind = 'deepseek' | 'openai' | 'opencode' | 'opencode-go' | 'openrouter' | 'ollama' | 'custom'
 
 export interface ProviderPreset {
   kind: ProviderKind

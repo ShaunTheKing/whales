@@ -16,6 +16,8 @@ function presetLabel(kind: ProviderKind): string {
       return 'OpenAI'
     case 'opencode':
       return 'OpenCode Zen'
+    case 'opencode-go':
+      return 'OpenCode Go'
     case 'openrouter':
       return 'OpenRouter'
     case 'ollama':

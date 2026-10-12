@@ -17,6 +17,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   { kind: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com', keyEnv: 'DEEPSEEK_API_KEY', needsKey: true, models: ['deepseek-chat', 'deepseek-reasoner'], docs: 'https://platform.deepseek.com/api_keys' },
   { kind: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', keyEnv: 'OPENAI_API_KEY', needsKey: true, models: [], docs: 'https://platform.openai.com/api-keys' },
   { kind: 'opencode', label: 'OpenCode Zen', baseUrl: 'https://opencode.ai/zen/v1', keyEnv: 'OPENCODE_API_KEY', needsKey: true, models: [], docs: 'https://opencode.ai/docs/zen' },
+  { kind: 'opencode-go', label: 'OpenCode Go', baseUrl: 'https://opencode.ai/zen/go/v1', keyEnv: 'OPENCODE_GO_API_KEY', needsKey: true, models: [], docs: 'https://opencode.ai/docs/go' },
   { kind: 'openrouter', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', keyEnv: 'OPENROUTER_API_KEY', needsKey: true, models: [], docs: 'https://openrouter.ai/keys' },
   { kind: 'ollama', label: 'Ollama (local)', baseUrl: 'http://127.0.0.1:11434/v1', needsKey: false, models: [] },
   { kind: 'custom', label: 'Custom (OpenAI-compatible)', baseUrl: '', needsKey: false, models: [] },

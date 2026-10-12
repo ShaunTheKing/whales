@@ -30,6 +30,11 @@ test('providers API: create with key, never echo it, rotate, clear, delete', asy
   const list = await call('GET', '/providers')
   assert.equal(list.data?.secretStore, 'memory')
   assert.ok((list.data?.presets as { kind: string }[]).some((p) => p.kind === 'opencode'))
+  const go = await call('POST', '/providers', { kind: 'opencode-go' })
+  assert.equal(go.status, 201)
+  assert.equal(go.data?.id, 'opencode-go')
+  assert.equal(go.data?.baseUrl, 'https://opencode.ai/zen/go/v1')
+  assert.equal((await call('DELETE', '/providers/opencode-go')).status, 204)
 
   const created = await call('POST', '/providers', { kind: 'opencode', apiKey: KEY, models: ['m1'] })
   assert.equal(created.status, 201)

@@ -205,7 +205,7 @@ export interface RoomPluginStatus {
 
 // ---- model providers (mirrors src/contracts/providers.ts). Keys are never part of these types. ----
 
-export type ProviderKind = 'deepseek' | 'openai' | 'opencode' | 'openrouter' | 'ollama' | 'custom'
+export type ProviderKind = 'deepseek' | 'openai' | 'opencode' | 'opencode-go' | 'openrouter' | 'ollama' | 'custom'
 
 export interface ProviderPreset {
   kind: ProviderKind

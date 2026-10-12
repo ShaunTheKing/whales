@@ -30,7 +30,7 @@ environment. The dmg is unsigned: the first time, right-click Whales.app → Ope
 
 ## Models
 
-Open **Models** in the sidebar and choose **Add provider**. The options are DeepSeek, OpenAI, OpenCode Zen, OpenRouter,
+Open **Models** in the sidebar and choose **Add provider**. The options are DeepSeek, OpenAI, OpenCode Zen, OpenCode Go, OpenRouter,
 Ollama (local), or any OpenAI-compatible URL.
 
 - **Keys.** Paste the API key. It is saved to your Mac's **Keychain** (item "Whales: <name>", service `whales.provider`)
