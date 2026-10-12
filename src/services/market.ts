@@ -229,7 +229,12 @@ export class Market extends Service implements MarketService {
     const installed = new Map(this.list().map((p) => [p.name, p]))
     return this.own.agents.catalog.names().map((name): CatalogEntry => {
       const plugin = installed.get(name)
-      if (!plugin) return { name, kind: 'builtin', scopes: BUILTIN_ROOM_OK.has(name) ? ['agent', 'room'] : ['agent'] }
+      if (!plugin) {
+        const builtin: CatalogEntry = { name, kind: 'builtin', scopes: BUILTIN_ROOM_OK.has(name) ? ['agent', 'room'] : ['agent'] }
+        const description = BUILTIN_DESCRIPTIONS[name]
+        if (description) builtin.description = description
+        return builtin
+      }
       const entry: CatalogEntry = { name, kind: 'market', description: plugin.manifest.description, version: plugin.manifest.version, scopes: plugin.manifest.scopes ?? ['agent', 'room'] }
       return entry
     })
@@ -419,6 +424,16 @@ export class Market extends Service implements MarketService {
 
 /** Built-ins that make sense room-scoped (none today: they all provide per-agent services). */
 const BUILTIN_ROOM_OK = new Set<string>()
+
+const BUILTIN_DESCRIPTIONS: Record<string, string> = {
+  memory: 'Long-term notes the agent can search and add to (remember tool).',
+  skills: 'Use skills installed in the shared skill library.',
+  workspace: 'Read and write files in the agent’s own workspace folder (asks first).',
+  checkpoints: 'Snapshot the workspace before and after every turn, so changes can be undone.',
+  'bridge-telegram': 'Chat with this agent from Telegram (needs a bot token in the environment).',
+  'driver-stub': 'Test driver that echoes a template; no model calls.',
+  'driver-openai-compat': 'Model driver for DeepSeek, OpenAI, OpenRouter, Ollama and other OpenAI-compatible APIs.',
+}
 
 // ---- pure helpers (exported for tests) -------------------------------------------------------------------------
 

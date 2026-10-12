@@ -27,9 +27,10 @@ export class ToolsRegistry extends Service implements ToolsService {
     const name = tool.spec.name
     if (!isToolName(name)) throw new TypeError(`tools: invalid tool name ${JSON.stringify(name)}`)
     const roomId = roomScopeOf(this.ctx)
-    if (this.tools.has(name) || (roomId !== undefined && this.roomTools.get(roomId)?.has(name))) {
-      throw new Error(`tools: "${name}" is already registered`)
-    }
+    // Within one scope names are unique. A room tool may share a name with an agent-wide tool: forTurn prefers the
+    // agent-wide one (e.g. the same plugin enabled on the agent and on the room).
+    const taken = roomId === undefined ? this.tools.has(name) : this.roomTools.get(roomId)?.has(name)
+    if (taken) throw new Error(`tools: "${name}" is already registered`)
     const dispose = this.ctx.effect(() => {
       const map = roomId === undefined ? this.tools : this.roomMap(roomId)
       map.set(name, tool)

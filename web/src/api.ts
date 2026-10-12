@@ -1,4 +1,4 @@
-import type { AgentSpec, AgentView, ApprovalDecision, ApprovalRequest, Checkpoint, DmMessage, DriverEvent, FileChange, Room, RoomEvent, RoomMessage, RoomNote, ServerEvent } from './types.ts'
+import type { AgentSpec, AgentView, ApprovalDecision, ApprovalRequest, BrowseResult, CatalogEntry, Checkpoint, DmMessage, DriverEvent, FileChange, InstallPreview, InstalledPlugin, MarketSource, PluginRef, Room, RoomEvent, RoomMessage, RoomNote, RoomPluginStatus, ServerEvent } from './types.ts'
 
 /**
  * SECURITY (orchestrator-owned). The API token arrives in the URL fragment (`#token=…`, never sent to the
@@ -139,6 +139,29 @@ export const api = {
       `/checkpoints/${encodeURIComponent(id)}/diff${to ? `?to=${encodeURIComponent(to)}` : ''}`,
     ),
   restore: (id: string) => json<{ safety: Checkpoint }>('POST', `/checkpoints/${encodeURIComponent(id)}/restore`),
+
+  /** Built-in + installed plugins usable in agent/room plugin lists. */
+  catalog: () => json<CatalogEntry[]>('GET', '/catalog'),
+  agentPlugins: (id: string) => json<{ driver: PluginRef; plugins: PluginRef[] }>('GET', `/agents/${encodeURIComponent(id)}/plugins`),
+  /** Replaces the agent's plugin list; a running agent restarts with it (rolls back on failure → ApiError 400). */
+  setAgentPlugins: (id: string, plugins: PluginRef[]) => json<AgentView>('PUT', `/agents/${encodeURIComponent(id)}/plugins`, { plugins }),
+  roomPlugins: (id: string) => json<{ plugins: PluginRef[]; status: RoomPluginStatus[] }>('GET', `/rooms/${encodeURIComponent(id)}/plugins`),
+  setRoomPlugins: (id: string, plugins: PluginRef[]) =>
+    json<{ room: Room; status: RoomPluginStatus[] }>('PUT', `/rooms/${encodeURIComponent(id)}/plugins`, { plugins }),
+
+  marketSources: () => json<MarketSource[]>('GET', '/market/sources'),
+  addMarketSource: (url: string) => json<MarketSource>('POST', '/market/sources', { url }),
+  removeMarketSource: (id: string) => json<void>('DELETE', `/market/sources/${encodeURIComponent(id)}`),
+  /** Fetches every source's index; a failing source has `error` set. */
+  browse: () => json<BrowseResult[]>('GET', '/market/browse'),
+  preview: (input: { source: string; name: string } | { repo: string; commit: string; path?: string } | { local: string }) =>
+    json<InstallPreview>('POST', '/market/preview', input),
+  /** Only call after the user has seen the preview and confirmed the "runs with full access" warning. */
+  install: (preview: InstallPreview) =>
+    json<InstalledPlugin>('POST', '/market/install', { previewId: preview.id, digest: preview.digest, acknowledge: true }),
+  installed: () => json<InstalledPlugin[]>('GET', '/market/plugins'),
+  /** 409 while an agent or room still uses it. */
+  uninstall: (name: string) => json<void>('DELETE', `/market/plugins/${encodeURIComponent(name)}`),
 }
 
 export type Unsubscribe = () => void

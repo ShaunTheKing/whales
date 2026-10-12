@@ -8,6 +8,7 @@ import { TokenGate } from './components/TokenGate.tsx'
 import { ChatView } from './components/ChatView.tsx'
 import { RoomView } from './components/RoomView.tsx'
 import { ApprovalTray } from './components/ApprovalTray.tsx'
+import { MarketView } from './components/MarketView.tsx'
 
 type Status = 'connecting' | 'open' | 'closed' | 'unauthorized'
 
@@ -165,13 +166,13 @@ export default function App() {
       <main className="main">
         {error ? <div className="error">{error}</div> : null}
         {selection?.kind === 'agent' && selectedAgent ? (
-          <ChatView agent={selectedAgent} onChanged={handleAgentChanged} />
+          <ChatView agent={selectedAgent} onChanged={handleAgentChanged} onOpenMarket={() => setSelection({ kind: 'market' })} />
         ) : null}
         {selection?.kind === 'agent' && !selectedAgent ? (
           <div className="empty">Agent not found.</div>
         ) : null}
         {selection?.kind === 'room' ? (
-          <RoomView roomId={selection.id} agents={agents} onDeleted={handleRoomDeleted} />
+          <RoomView roomId={selection.id} agents={agents} onDeleted={handleRoomDeleted} onOpenMarket={() => setSelection({ kind: 'market' })} />
         ) : null}
         {selection?.kind === 'new-agent' ? (
           <NewAgentForm onCreated={handleAgentCreated} onCancel={() => setSelection(undefined)} />
@@ -179,9 +180,25 @@ export default function App() {
         {selection?.kind === 'new-room' ? (
           <NewRoomForm agents={agents} onCreated={handleRoomCreated} onCancel={() => setSelection(undefined)} />
         ) : null}
+        {selection?.kind === 'market' ? <MarketView onChanged={handleAgentChanged} /> : null}
         {selection === undefined ? (
           <div className="empty">
-            {loading ? 'Loading…' : 'Select an agent or room, or create a new one to get started.'}
+            {loading ? (
+              'Loading…'
+            ) : (
+              <>
+                <h2>Welcome to Whales</h2>
+                <p>Create an agent to start a chat, put several agents in a room to work together, and add plugins from the Marketplace.</p>
+                <div className="row" style={{ justifyContent: 'center' }}>
+                  <button type="button" className="btn btn-primary" onClick={() => setSelection({ kind: 'new-agent' })}>
+                    New agent
+                  </button>
+                  <button type="button" className="btn" onClick={() => setSelection({ kind: 'market' })}>
+                    Browse plugins
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         ) : null}
       </main>

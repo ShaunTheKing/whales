@@ -5,6 +5,7 @@ export type Selection =
   | { kind: 'room'; id: string }
   | { kind: 'new-agent' }
   | { kind: 'new-room' }
+  | { kind: 'market' }
   | undefined
 
 export function Sidebar(props: {
@@ -24,87 +25,92 @@ export function Sidebar(props: {
   }
 
   const statusLabel =
-    status === 'open'
-      ? 'Connected'
-      : status === 'connecting'
-        ? 'Connecting…'
-        : status === 'unauthorized'
-          ? 'Unauthorized'
-          : 'Disconnected'
+    status === 'open' ? 'Connected' : status === 'connecting' ? 'Connecting…' : status === 'unauthorized' ? 'Unauthorized' : 'Disconnected'
+  const statusDot = status === 'open' ? 'dot dot-active' : status === 'unauthorized' ? 'dot dot-failed' : 'dot dot-stopped'
+  const itemClass = (active: boolean) => (active ? 'nav-item nav-item-active' : 'nav-item')
 
   return (
     <aside className="sidebar">
-      <div className="panel-head">
-        <span>Whales</span>
+      <div className="wordmark">
+        <span className="wordmark-dots">
+          <span />
+          <span />
+          <span />
+        </span>
+        Whales
       </div>
-      <div className="panel-body">
-        <div className="row">
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => onSelect({ kind: 'new-agent' })}
-          >
-            + Agent
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => onSelect({ kind: 'new-room' })}
-          >
-            + Room
+      <div className="tagline">Local multi-agent workspace</div>
+
+      <button type="button" className="nav-primary" onClick={() => onSelect({ kind: 'new-agent' })}>
+        <span aria-hidden="true">+</span> New agent
+      </button>
+
+      <div className="nav-section">
+        <div className="nav-label">
+          <span>Agents</span>
+          <button type="button" className="nav-add" title="New agent" onClick={() => onSelect({ kind: 'new-agent' })}>
+            +
           </button>
         </div>
-
-        <h3 className="muted">Agents</h3>
         {agents.length === 0 ? (
-          <div className="empty">No agents yet.</div>
+          <div className="nav-empty">No agents yet.</div>
         ) : (
           <ul>
-            {agents.map((agent) => {
-              const active = selection?.kind === 'agent' && selection.id === agent.id
-              return (
-                <li key={agent.id}>
-                  <button
-                    type="button"
-                    className={active ? 'btn btn-primary' : 'btn btn-ghost'}
-                    onClick={() => onSelect({ kind: 'agent', id: agent.id })}
-                  >
-                    <span className={dotClass(agent.state)} />
-                    <span>{agent.name}</span>
-                    <span className="muted">{agent.role ?? agent.driver.model ?? ''}</span>
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-
-        <h3 className="muted">Rooms</h3>
-        {rooms.length === 0 ? (
-          <div className="empty">No rooms yet.</div>
-        ) : (
-          <ul>
-            {rooms.map((room) => {
-              const active = selection?.kind === 'room' && selection.id === room.id
-              return (
-                <li key={room.id}>
-                  <button
-                    type="button"
-                    className={active ? 'btn btn-primary' : 'btn btn-ghost'}
-                    onClick={() => onSelect({ kind: 'room', id: room.id })}
-                  >
-                    <span>{room.name}</span>
-                    <span className="muted">{room.members.length}</span>
-                  </button>
-                </li>
-              )
-            })}
+            {agents.map((agent) => (
+              <li key={agent.id}>
+                <button
+                  type="button"
+                  className={itemClass(selection?.kind === 'agent' && selection.id === agent.id)}
+                  onClick={() => onSelect({ kind: 'agent', id: agent.id })}
+                >
+                  <span className={dotClass(agent.state)} />
+                  <span>{agent.name}</span>
+                  <span className="muted">{agent.role ?? agent.driver.model ?? ''}</span>
+                </button>
+              </li>
+            ))}
           </ul>
         )}
       </div>
-      <div className="panel-head">
-        <span className="muted">{statusLabel}</span>
-        {pendingApprovals > 0 ? <span className="badge">{pendingApprovals}</span> : null}
+
+      <div className="nav-section">
+        <div className="nav-label">
+          <span>Rooms</span>
+          <button type="button" className="nav-add" title="New room" onClick={() => onSelect({ kind: 'new-room' })}>
+            +
+          </button>
+        </div>
+        {rooms.length === 0 ? (
+          <div className="nav-empty">No rooms yet.</div>
+        ) : (
+          <ul>
+            {rooms.map((room) => (
+              <li key={room.id}>
+                <button
+                  type="button"
+                  className={itemClass(selection?.kind === 'room' && selection.id === room.id)}
+                  onClick={() => onSelect({ kind: 'room', id: room.id })}
+                >
+                  <span aria-hidden="true">#</span>
+                  <span>{room.name}</span>
+                  <span className="muted">{room.members.length}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="sidebar-footer">
+        <button type="button" className={itemClass(selection?.kind === 'market')} onClick={() => onSelect({ kind: 'market' })}>
+          <span aria-hidden="true">⊞</span>
+          <span>Marketplace</span>
+        </button>
+        <div className="status-line">
+          <span className={statusDot} />
+          <span>{statusLabel}</span>
+          {pendingApprovals > 0 ? <span className="badge badge-warn">{pendingApprovals} waiting</span> : null}
+        </div>
       </div>
     </aside>
   )

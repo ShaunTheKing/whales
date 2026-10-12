@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { api, ApiError } from '../api.ts'
 import type { AgentView, DriverEvent, Room, RoomMessage } from '../types.ts'
 import { ToolCallView } from './ToolCallView.tsx'
+import { PluginPicker } from './PluginPicker.tsx'
 
 interface ToolState {
   id: string
@@ -41,8 +42,9 @@ function applyEvent(block: LiveBlock, event: DriverEvent): LiveBlock {
   }
 }
 
-export function RoomView(props: { roomId: string; agents: AgentView[]; onDeleted(): void }) {
-  const { roomId, agents, onDeleted } = props
+export function RoomView(props: { roomId: string; agents: AgentView[]; onDeleted(): void; onOpenMarket(): void }) {
+  const { roomId, agents, onDeleted, onOpenMarket } = props
+  const [showPlugins, setShowPlugins] = useState(false)
   const [room, setRoom] = useState<Room | undefined>(undefined)
   const [order, setOrder] = useState<string[]>([])
   const [history, setHistory] = useState<RoomMessage[]>([])
@@ -54,6 +56,16 @@ export function RoomView(props: { roomId: string; agents: AgentView[]; onDeleted
   const [note, setNote] = useState('')
   const controllerRef = useRef<AbortController | undefined>(undefined)
   const bodyRef = useRef<HTMLDivElement | null>(null)
+
+  const reloadRoom = useCallback(async () => {
+    try {
+      const data = await api.room(roomId)
+      setRoom(data.room)
+      setOrder(data.order)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }, [roomId])
 
   const nameOf = useCallback(
     (id: string): string => {
@@ -225,29 +237,40 @@ export function RoomView(props: { roomId: string; agents: AgentView[]; onDeleted
   return (
     <div className="panel">
       <div className="panel-head">
-        <div>
-          <strong>{room?.name ?? roomId}</strong>
-          <span className="muted">
-            {' '}
+        <div className="title-block">
+          <strong># {room?.name ?? roomId}</strong>
+          <span>
             {members.map((id, index) => (
               <span key={id}>
-                {index > 0 ? ', ' : ''}
+                {index > 0 ? ' · ' : ''}
                 {nameOf(id)}
                 {index === members.length - 1 ? ' (arbiter)' : ''}
               </span>
             ))}
+            {room?.plugins?.length ? ` · ${room.plugins.length} plugin${room.plugins.length === 1 ? '' : 's'}` : ''}
           </span>
         </div>
-        <div className="row">
-          <input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add note…" />
-          <button className="btn" type="button" onClick={() => void addNote()} disabled={note.trim().length === 0}>
+        <div className="header-actions">
+          <input className="input" style={{ width: 180 }} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Add a shared note…" />
+          <button className="btn btn-sm" type="button" onClick={() => void addNote()} disabled={note.trim().length === 0}>
             Add note
           </button>
-          <button className="btn-danger" type="button" onClick={() => void remove()}>
+          <button className="btn btn-sm" type="button" onClick={() => setShowPlugins(true)}>
+            Plugins
+          </button>
+          <button className="btn btn-danger btn-sm" type="button" onClick={() => void remove()}>
             Delete
           </button>
         </div>
       </div>
+      {showPlugins && room ? (
+        <PluginPicker
+          target={{ kind: 'room', id: room.id, name: room.name }}
+          onClose={() => setShowPlugins(false)}
+          onChanged={() => void reloadRoom()}
+          onOpenMarket={onOpenMarket}
+        />
+      ) : null}
       <div className="panel-body" ref={bodyRef}>
         <div className="messages">
           {history.map((message) => {
@@ -257,7 +280,7 @@ export function RoomView(props: { roomId: string; agents: AgentView[]; onDeleted
             const className =
               message.speaker === 'system' ? 'msg msg-system muted' : message.speaker === 'user' ? 'msg msg-user' : 'msg msg-agent'
             return (
-              <div key={message.id}>
+              <Fragment key={message.id}>
                 {separator}
                 <div className={className}>
                   {/* The most senior member (last in speaking order) is the room's arbiter. */}
@@ -267,7 +290,7 @@ export function RoomView(props: { roomId: string; agents: AgentView[]; onDeleted
                   </div>
                   <div className="msg-body">{message.content}</div>
                 </div>
-              </div>
+              </Fragment>
             )
           })}
           {live.map((block) => (
@@ -291,15 +314,15 @@ export function RoomView(props: { roomId: string; agents: AgentView[]; onDeleted
           onChange={(event) => setPrompt(event.target.value)}
           onKeyDown={onKeyDown}
           placeholder="Post to the room…"
-          rows={2}
+          rows={1}
         />
         {streaming ? (
-          <button className="btn" type="button" onClick={stop}>
+          <button className="btn btn-sm" type="button" onClick={stop}>
             Stop
           </button>
         ) : (
-          <button className="btn-primary" type="button" onClick={() => void post()} disabled={prompt.trim().length === 0}>
-            Post
+          <button className="send-btn" type="button" aria-label="Post" title="Post" onClick={() => void post()} disabled={prompt.trim().length === 0}>
+            ↑
           </button>
         )}
       </div>

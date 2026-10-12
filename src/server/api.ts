@@ -1,7 +1,8 @@
 import { Hono, type Context } from 'hono'
 import { stream } from 'hono/streaming'
 import type { App } from '../core/app.ts'
-import type { AgentSpec, AgentId, RoomId } from '../contracts/core.ts'
+import type { AgentSpec, AgentId, PluginRef, RoomId } from '../contracts/core.ts'
+import type { InstallPreview } from '../contracts/market.ts'
 import type { AgentHandle } from '../contracts/agents.ts'
 import type { AgentRecord, MessageRecord } from '../contracts/agents.ts'
 import type { Room, RoomMessage, RoomNote, TeamProposal } from '../contracts/rooms.ts'
@@ -76,10 +77,10 @@ function errorResponse(c: Context, err: unknown): Response {
   }
   if (message === 'invalid JSON body') return c.json({ error: message }, 400)
   if (/not approved/.test(message)) return c.json({ error: message }, 403)
-  if (/already|not pending|changed/.test(message)) {
+  if (/already|not pending|changed|still used by|digest does not match/.test(message)) {
     return c.json({ error: message }, 409)
   }
-  if (/not found|unknown/.test(message)) return c.json({ error: message }, 404)
+  if (/not found|unknown|does not exist|not listed/.test(message)) return c.json({ error: message }, 404)
   return c.json({ error: message }, 500)
 }
 
@@ -601,6 +602,155 @@ function registerCheckpoints(app: App, api: Hono): void {
   })
 }
 
+/** A JSON array of `{ name, config? }` plugin refs from a request body. */
+function pluginRefs(body: Record<string, unknown>): PluginRef[] {
+  const value = body.plugins
+  if (!Array.isArray(value) || value.length > 32) throw new TypeError('plugins must be an array of { name, config? }')
+  return value.map((item): PluginRef => {
+    if (!isRecord(item) || typeof item.name !== 'string') throw new TypeError('plugins must be an array of { name, config? }')
+    if (item.config !== undefined && !isRecord(item.config)) throw new TypeError(`plugin ${item.name}: config must be an object`)
+    return item.config === undefined ? { name: item.name } : { name: item.name, config: item.config }
+  })
+}
+
+/**
+ * Marketplace and per-agent / per-room plugin lists. SECURITY (orchestrator-owned): installs are user actions over
+ * the authenticated API only; agents have no tool that reaches these routes.
+ */
+function registerPlugins(app: App, api: Hono): void {
+  const market = () => app.ctx.get('market')
+
+  api.get('/catalog', (c) => {
+    const service = market()
+    if (service) return c.json(service.catalog())
+    return c.json(app.ctx.agents.catalog.names().map((name) => ({ name, kind: 'builtin', scopes: ['agent'] })))
+  })
+
+  api.get('/agents/:id/plugins', (c) => {
+    const id = c.req.param('id')
+    const spec = app.ctx.agents.get(id)?.spec ?? storedAgent(app, id)?.spec
+    if (!spec) return c.json({ error: `agent ${id} not found` }, 404)
+    return c.json({ driver: spec.driver, plugins: spec.plugins })
+  })
+
+  api.put('/agents/:id/plugins', async (c) => {
+    const id = c.req.param('id')
+    const spec = app.ctx.agents.get(id)?.spec ?? storedAgent(app, id)?.spec
+    if (!spec) return c.json({ error: `agent ${id} not found` }, 404)
+    const plugins = pluginRefs(await readJson(c))
+    const names = plugins.map((p) => p.name)
+    if (new Set(names).size !== names.length) throw new TypeError('duplicate plugin in list')
+    try {
+      await app.ctx.agents.update({ ...spec, plugins })
+    } catch (err) {
+      // Spec validation and plugin start failures are problems with the requested list.
+      if (err instanceof TypeError || /unknown plugin|failed|did not start/.test(err instanceof Error ? err.message : '')) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400)
+      }
+      throw err
+    }
+    const view = agentView(app, id)
+    return c.json(view)
+  })
+
+  api.put('/rooms/:id/plugins', async (c) => {
+    const rooms = app.ctx.get('rooms')
+    if (!rooms) return c.json({ error: 'rooms service unavailable' }, 503)
+    const id = c.req.param('id')
+    if (!rooms.get(id)) return c.json({ error: `room ${id} not found` }, 404)
+    let room: Room
+    try {
+      room = rooms.setPlugins(id, pluginRefs(await readJson(c)))
+    } catch (err) {
+      throw err instanceof TypeError ? err : new TypeError(err instanceof Error ? err.message : String(err))
+    }
+    await app.ctx.get('roomPlugins')?.sync()
+    return c.json({ room, status: app.ctx.get('roomPlugins')?.status(id) ?? [] })
+  })
+
+  api.get('/rooms/:id/plugins', (c) => {
+    const rooms = app.ctx.get('rooms')
+    if (!rooms) return c.json({ error: 'rooms service unavailable' }, 503)
+    const id = c.req.param('id')
+    const room = rooms.get(id)
+    if (!room) return c.json({ error: `room ${id} not found` }, 404)
+    return c.json({ plugins: room.plugins ?? [], status: app.ctx.get('roomPlugins')?.status(id) ?? [] })
+  })
+
+  api.get('/market/sources', (c) => {
+    const service = market()
+    if (!service) return c.json({ error: 'market service unavailable' }, 503)
+    return c.json(service.sources())
+  })
+
+  api.post('/market/sources', async (c) => {
+    const service = market()
+    if (!service) return c.json({ error: 'market service unavailable' }, 503)
+    const url = str(await readJson(c), 'url')
+    if (url === undefined) throw new TypeError('url is required')
+    return c.json(service.addSource(url), 201)
+  })
+
+  api.delete('/market/sources/:id', (c) => {
+    const service = market()
+    if (!service) return c.json({ error: 'market service unavailable' }, 503)
+    const id = c.req.param('id')
+    if (!service.removeSource(id)) return c.json({ error: `source ${id} not found` }, 404)
+    return c.body(null, 204)
+  })
+
+  api.get('/market/browse', async (c) => {
+    const service = market()
+    if (!service) return c.json({ error: 'market service unavailable' }, 503)
+    return c.json(await service.browse())
+  })
+
+  api.post('/market/preview', async (c) => {
+    const service = market()
+    if (!service) return c.json({ error: 'market service unavailable' }, 503)
+    const body = await readJson(c)
+    const source = str(body, 'source')
+    const name = str(body, 'name')
+    const repo = str(body, 'repo')
+    const commit = str(body, 'commit')
+    const local = str(body, 'local')
+    const path = str(body, 'path')
+    let preview: InstallPreview
+    if (source !== undefined && name !== undefined) preview = await service.preview({ source, name })
+    else if (repo !== undefined && commit !== undefined) preview = await service.preview(path === undefined ? { repo, commit } : { repo, commit, path })
+    else if (local !== undefined) preview = await service.preview({ local })
+    else throw new TypeError('give { source, name }, { repo, commit, path? } or { local }')
+    return c.json(preview, 201)
+  })
+
+  api.post('/market/install', async (c) => {
+    const service = market()
+    if (!service) return c.json({ error: 'market service unavailable' }, 503)
+    const body = await readJson(c)
+    const previewId = str(body, 'previewId')
+    const digest = str(body, 'digest')
+    // The UI must show the "runs with full access" warning; this flag is its explicit acknowledgement.
+    if (previewId === undefined || digest === undefined || bool(body, 'acknowledge') !== true) {
+      throw new TypeError('previewId, digest and acknowledge: true are required')
+    }
+    return c.json(await service.install(previewId, digest), 201)
+  })
+
+  api.get('/market/plugins', (c) => {
+    const service = market()
+    if (!service) return c.json({ error: 'market service unavailable' }, 503)
+    return c.json(service.list())
+  })
+
+  api.delete('/market/plugins/:name', async (c) => {
+    const service = market()
+    if (!service) return c.json({ error: 'market service unavailable' }, 503)
+    const name = c.req.param('name')
+    if (!(await service.uninstall(name))) return c.json({ error: `plugin ${name} not found` }, 404)
+    return c.body(null, 204)
+  })
+}
+
 function registerTeam(app: App, api: Hono): void {
   api.get('/team/proposals', (c) => {
     const proposals = app.ctx.store.collection('teamProposals').list({ order: 'desc' })
@@ -652,6 +802,7 @@ export function createApi(app: App): Hono {
   registerSkills(app, api)
   registerRoutines(app, api)
   registerCheckpoints(app, api)
+  registerPlugins(app, api)
   registerTeam(app, api)
   registerHealth(app, api)
   return api

@@ -56,6 +56,7 @@ export interface Room {
   name: string
   members: string[]
   createdAt: number
+  plugins?: PluginRef[]
 }
 
 export interface RoomMessage {
@@ -118,3 +119,86 @@ export type ServerEvent =
   | { type: 'approval-resolved'; data: ApprovalRequest }
   | { type: 'room-event'; data: { roomId: string; event: RoomEvent } }
   | { type: 'turn-before' | 'turn-after' | 'routine-ran'; data: unknown }
+
+// ---- plugins & marketplace (mirrors src/contracts/market.ts) ----
+
+export interface PluginManifest {
+  name: string
+  version: string
+  description: string
+  entry: string
+  author?: string
+  license?: string
+  homepage?: string
+  scopes?: ('agent' | 'room')[]
+}
+
+export interface IndexEntry {
+  name: string
+  version: string
+  description: string
+  repo: string
+  commit: string
+  path?: string
+  author?: string
+  license?: string
+  homepage?: string
+  tags?: string[]
+  scopes?: ('agent' | 'room')[]
+}
+
+export interface MarketSource {
+  id: string
+  url: string
+  createdAt: number
+}
+
+export interface BrowseResult {
+  source: string
+  name?: string
+  entries: IndexEntry[]
+  error?: string
+}
+
+export type PluginOrigin =
+  | { kind: 'github'; repo: string; commit: string; path?: string; index?: string }
+  | { kind: 'local'; path: string }
+
+export interface InstallPreview {
+  id: string
+  manifest: PluginManifest
+  origin: PluginOrigin
+  files: { path: string; bytes: number }[]
+  totalBytes: number
+  digest: string
+  warnings: string[]
+  expiresAt: number
+}
+
+export interface InstalledPlugin {
+  name: string
+  manifest: PluginManifest
+  origin: PluginOrigin
+  digest: string
+  dir: string
+  createdAt: number
+  state: 'loaded' | 'failed' | 'pending-restart'
+  error?: string
+  usedBy: { agents: string[]; rooms: string[] }
+}
+
+export interface CatalogEntry {
+  name: string
+  kind: 'builtin' | 'market'
+  description?: string
+  version?: string
+  scopes: ('agent' | 'room')[]
+}
+
+export interface RoomPluginStatus {
+  roomId: string
+  agentId: string
+  plugin: string
+  state: 'active' | 'failed'
+  error?: string
+}

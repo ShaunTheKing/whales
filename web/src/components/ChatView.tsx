@@ -3,6 +3,7 @@ import type { JSX } from 'react'
 import { api, ApiError } from '../api.ts'
 import type { AgentView, DmMessage, DriverEvent } from '../types.ts'
 import { ToolCallView } from './ToolCallView.tsx'
+import { PluginPicker } from './PluginPicker.tsx'
 import { HistoryPanel } from './HistoryPanel.tsx'
 
 interface ToolState {
@@ -71,8 +72,9 @@ function applyEvent(message: LiveMessage, event: DriverEvent): LiveMessage {
   }
 }
 
-export function ChatView(props: { agent: AgentView; onChanged(): void }) {
-  const { agent, onChanged } = props
+export function ChatView(props: { agent: AgentView; onChanged(): void; onOpenMarket(): void }) {
+  const { agent, onChanged, onOpenMarket } = props
+  const [showPlugins, setShowPlugins] = useState(false)
   // Server history (text only) plus turns finished in this session, which keep their tool calls and usage.
   const [history, setHistory] = useState<Entry[]>([])
   const [live, setLive] = useState<LiveMessage | undefined>(undefined)
@@ -198,27 +200,37 @@ export function ChatView(props: { agent: AgentView; onChanged(): void }) {
   return (
     <div className="panel">
       <div className="panel-head">
-        <div>
+        <div className="title-block">
           <strong>{agent.name}</strong>
-          <span className="muted">
-            {' '}
+          <span>
             {agent.role ? `${agent.role} · ` : ''}
-            {agent.driver.name}
-            {agent.driver.model ? `/${agent.driver.model}` : ''} · {agent.state}
+            {agent.driver.model ?? agent.driver.name} · {agent.state}
+            {agent.plugins.length ? ` · ${agent.plugins.join(', ')}` : ''}
           </span>
         </div>
-        <div className="row">
-          <button className="btn" type="button" onClick={() => setShowHistory((value) => !value)}>
+        <div className="header-actions">
+          <button className="btn btn-sm" type="button" onClick={() => setShowPlugins(true)}>
+            Plugins
+          </button>
+          <button className="btn btn-sm" type="button" onClick={() => setShowHistory((value) => !value)}>
             History
           </button>
-          <button className="btn" type="button" onClick={() => void toggleState()}>
+          <button className="btn btn-sm" type="button" onClick={() => void toggleState()}>
             {running ? 'Stop' : 'Start'}
           </button>
-          <button className="btn-danger" type="button" onClick={() => void remove()}>
+          <button className="btn btn-danger btn-sm" type="button" onClick={() => void remove()}>
             Delete
           </button>
         </div>
       </div>
+      {showPlugins ? (
+        <PluginPicker
+          target={{ kind: 'agent', id: agent.id, name: agent.name }}
+          onClose={() => setShowPlugins(false)}
+          onChanged={onChanged}
+          onOpenMarket={onOpenMarket}
+        />
+      ) : null}
       {showHistory ? <HistoryPanel agentId={agent.id} /> : null}
       <div className="panel-body" ref={bodyRef}>
         <div className="messages">
@@ -232,16 +244,16 @@ export function ChatView(props: { agent: AgentView; onChanged(): void }) {
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Message the agent…"
-          rows={2}
+          placeholder={`Message ${agent.name}…`}
+          rows={1}
         />
         {streaming ? (
-          <button className="btn" type="button" onClick={stop}>
+          <button className="btn btn-sm" type="button" onClick={stop}>
             Stop
           </button>
         ) : (
-          <button className="btn-primary" type="button" onClick={() => void send()} disabled={prompt.trim().length === 0}>
-            Send
+          <button className="send-btn" type="button" aria-label="Send" title="Send" onClick={() => void send()} disabled={prompt.trim().length === 0}>
+            ↑
           </button>
         )}
       </div>
