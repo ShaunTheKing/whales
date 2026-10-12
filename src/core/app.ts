@@ -10,6 +10,8 @@ import { Approvals } from '../services/approvals.ts'
 import { Memory } from '../services/memory.ts'
 import { AgentSkills, SkillLibrary, type SkillsConfig } from '../services/skills.ts'
 import { Routines, type RoutinesConfig } from '../services/routines.ts'
+import { Workspace } from '../services/workspace.ts'
+import { Rooms, type RoomsConfig } from '../services/rooms.ts'
 
 export interface App {
   ctx: Context
@@ -24,6 +26,7 @@ export interface AppOptions {
   services?: {
     skills?: SkillsConfig | false
     routines?: RoutinesConfig | false
+    rooms?: RoomsConfig | false
     approvals?: false
   }
 }
@@ -44,12 +47,14 @@ function Whales(ctx: Context, opts: AppOptions & { children: ChildFiber[] }): vo
   if (services.approvals !== false) add('approvals', ctx.plugin(Approvals))
   if (services.skills !== false) add('skills', ctx.plugin(SkillLibrary, services.skills ?? {}))
   if (services.routines !== false) add('routines', ctx.plugin(Routines, services.routines ?? {}))
+  if (services.rooms !== false) add('rooms', ctx.plugin(Rooms, services.rooms ?? {}))
   ctx.inject(['agents'], (ctx) => {
     const builtins = {
       'driver-stub': StubDriver,
       'driver-openai-compat': OpenAICompatDriver,
       memory: Memory,
       skills: AgentSkills,
+      workspace: Workspace,
     }
     for (const [name, plugin] of Object.entries(builtins)) {
       ctx.effect(() => ctx.agents.catalog.register(name, plugin), `catalog:${name}`)

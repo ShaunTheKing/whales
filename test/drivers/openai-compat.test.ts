@@ -249,7 +249,7 @@ describe('OpenAICompatDriver config', () => {
       assert.equal(d.kind, 'openai-compat')
       assert.equal(d.model, 'm1')
       assert.deepEqual(d.capabilities, {
-        tools: false,
+        tools: true,
         agentic: false,
         statefulSession: false,
       })

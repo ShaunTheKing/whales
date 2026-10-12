@@ -25,6 +25,8 @@ export interface OpenAICompatConfig {
   maxTokens?: number
   idleTimeoutMs?: number
   maxRetries?: number
+  tools?: boolean
+  maxToolRounds?: number
 }
 
 const API_KEY_ENV_RE = /^[A-Z][A-Z0-9_]{0,63}$/
@@ -32,6 +34,34 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504])
 const DEFAULT_IDLE_TIMEOUT_MS = 60000
 const DEFAULT_MAX_RETRIES = 2
+const DEFAULT_MAX_TOOL_ROUNDS = 8
+
+interface WireToolCall {
+  id: string
+  type: 'function'
+  function: { name: string; arguments: string }
+}
+
+type WireMessage =
+  | { role: 'system' | 'user' | 'assistant'; content: string | null; tool_calls?: WireToolCall[] }
+  | { role: 'tool'; tool_call_id: string; content: string }
+
+interface AccumulatedCall {
+  index: number
+  id: string
+  name: string
+  args: string
+}
+
+interface Usage {
+  inputTokens: number
+  outputTokens: number
+}
+
+type Outcome =
+  | { kind: 'final'; stopReason: 'end' | 'max_tokens' | 'refused'; usage?: Usage; text: string }
+  | { kind: 'tools'; calls: AccumulatedCall[]; usage?: Usage; text: string }
+  | { kind: 'stopped' }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -59,8 +89,8 @@ function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-function mapHistory(history: ChatMessage[]): Array<{ role: string; content: string }> {
-  const out: Array<{ role: string; content: string }> = []
+function mapHistory(history: ChatMessage[]): WireMessage[] {
+  const out: WireMessage[] = []
   for (const msg of history) {
     const content = msg.name ? `${msg.name}: ${msg.content}` : msg.content
     out.push({ role: msg.role, content })
@@ -68,37 +98,48 @@ function mapHistory(history: ChatMessage[]): Array<{ role: string; content: stri
   return out
 }
 
-/** Pure: builds the request body (exported for tests). */
-export function buildBody(
-  config: OpenAICompatConfig & { model: string },
-  input: TurnInput,
-): Record<string, unknown> {
-  const messages: Array<{ role: string; content: string }> = []
+function buildMessages(input: TurnInput): WireMessage[] {
+  const messages: WireMessage[] = []
   if (input.system !== '') {
     messages.push({ role: 'system', content: input.system })
   }
   for (const msg of mapHistory(input.history)) messages.push(msg)
   messages.push({ role: 'user', content: input.prompt })
+  return messages
+}
 
+function toolsEnabled(config: OpenAICompatConfig): boolean {
+  return config.tools !== false
+}
+
+/** Pure: builds the request body (exported for tests). */
+export function buildBody(
+  config: OpenAICompatConfig & { model: string },
+  input: TurnInput,
+  messages?: WireMessage[],
+): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: config.model,
     stream: true,
     stream_options: { include_usage: true },
-    messages,
+    messages: messages ?? buildMessages(input),
   }
   if (config.temperature !== undefined) body.temperature = config.temperature
   if (config.maxTokens !== undefined) body.max_tokens = config.maxTokens
+  if (toolsEnabled(config) && input.tools.specs.length > 0) {
+    body.tools = input.tools.specs.map((s) => ({
+      type: 'function',
+      function: { name: s.name, description: s.description, parameters: s.inputSchema },
+    }))
+    body.tool_choice = 'auto'
+  }
   return body
 }
 
 export class OpenAICompatDriver extends Service implements Driver {
   readonly kind = 'openai-compat' as const
   readonly model: string
-  readonly capabilities: DriverCapabilities = {
-    tools: false,
-    agentic: false,
-    statefulSession: false,
-  }
+  readonly capabilities: DriverCapabilities
   readonly endpoint: string
 
   private readonly _baseUrl: string
@@ -107,6 +148,8 @@ export class OpenAICompatDriver extends Service implements Driver {
   private readonly _maxTokens: number | undefined
   private readonly _idleTimeoutMs: number
   private readonly _maxRetries: number
+  private readonly _maxToolRounds: number
+  private readonly _tools: boolean
   private readonly _host: string
 
   constructor(ctx: Context, config: OpenAICompatConfig) {
@@ -221,6 +264,21 @@ export class OpenAICompatDriver extends Service implements Driver {
       }
     }
 
+    if (config.tools !== undefined && typeof config.tools !== 'boolean') {
+      throw new TypeError('driver-openai-compat: tools must be a boolean')
+    }
+
+    if (config.maxToolRounds !== undefined) {
+      if (
+        typeof config.maxToolRounds !== 'number' ||
+        !Number.isInteger(config.maxToolRounds) ||
+        config.maxToolRounds < 1 ||
+        config.maxToolRounds > 32
+      ) {
+        throw new TypeError('driver-openai-compat: maxToolRounds must be an integer in [1, 32]')
+      }
+    }
+
     this.model = config.model
     this._baseUrl = baseUrl
     this._apiKeyEnv = apiKeyEnv
@@ -228,8 +286,15 @@ export class OpenAICompatDriver extends Service implements Driver {
     this._maxTokens = config.maxTokens
     this._idleTimeoutMs = config.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS
     this._maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES
+    this._tools = config.tools !== false
+    this._maxToolRounds = config.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS
     this.endpoint = `${baseUrl}/chat/completions`
     this._host = new URL(this.endpoint).host
+    this.capabilities = {
+      tools: this._tools,
+      agentic: false,
+      statefulSession: false,
+    }
   }
 
   private scrub(message: string): string {
@@ -271,7 +336,7 @@ export class OpenAICompatDriver extends Service implements Driver {
     // key used for this run (scrub() inside helpers is defence in depth, not the guarantee).
     const redact = (message: string): string => (key ? message.split(key).join('[redacted]') : message)
     try {
-      for await (const event of this.runAttempts(input, signal, key)) {
+      for await (const event of this.converse(input, signal, key)) {
         yield event.type === 'error' ? { type: 'error', message: redact(event.message) } : event
       }
     } catch (err) {
@@ -280,19 +345,116 @@ export class OpenAICompatDriver extends Service implements Driver {
     }
   }
 
-  private async *runAttempts(
+  private async *converse(
     input: TurnInput,
     signal: AbortSignal,
     key: string | undefined,
   ): AsyncIterable<DriverEvent> {
-    const body = JSON.stringify(buildBody({ ...this.configForBody(), model: this.model }, input))
+    const messages = buildMessages(input)
+    let totalInput = 0
+    let totalOutput = 0
+    let sawUsage = false
+    let toolRounds = 0
+
+    for (;;) {
+      const outcome = yield* this.runAttempts(input, messages, signal, key)
+
+      if (outcome.kind === 'stopped') return
+
+      if (outcome.usage !== undefined) {
+        totalInput += outcome.usage.inputTokens
+        totalOutput += outcome.usage.outputTokens
+        sawUsage = true
+      }
+
+      if (outcome.kind === 'final') {
+        if (sawUsage) {
+          yield { type: 'usage', inputTokens: totalInput, outputTokens: totalOutput }
+        }
+        yield { type: 'done', stopReason: outcome.stopReason }
+        return
+      }
+
+      // outcome.kind === 'tools'. A tool round at the limit is refused BEFORE running anything: executing calls
+      // whose results can never be sent back to the model would be side effects for nothing.
+      if (toolRounds + 1 >= this._maxToolRounds) {
+        yield { type: 'error', message: this.scrub(`tool round limit (${this._maxToolRounds}) reached`) }
+        yield { type: 'done', stopReason: 'error' }
+        return
+      }
+      toolRounds++
+
+      const wireCalls: WireToolCall[] = []
+      const toolMessages: WireMessage[] = []
+
+      for (const call of outcome.calls) {
+        if (signal.aborted) {
+          yield { type: 'done', stopReason: 'cancelled' }
+          return
+        }
+
+        const rawArgs = call.args === '' ? '{}' : call.args
+        let parsed: unknown
+        let parseError: string | undefined
+        try {
+          parsed = JSON.parse(rawArgs)
+        } catch (err) {
+          parseError = errorText(err)
+        }
+
+        let result: { output: string; isError: boolean }
+        if (parseError !== undefined) {
+          result = {
+            output: `invalid JSON arguments for ${call.name}: ${parseError}`,
+            isError: true,
+          }
+        } else {
+          yield { type: 'tool_call', id: call.id, name: call.name, input: parsed }
+          try {
+            result = await input.tools.invoke({ id: call.id, name: call.name, input: parsed }, signal)
+          } catch (err) {
+            result = { output: errorText(err), isError: true }
+          }
+        }
+
+        if (signal.aborted) {
+          yield { type: 'done', stopReason: 'cancelled' }
+          return
+        }
+
+        yield { type: 'tool_result', id: call.id, output: result.output, isError: result.isError }
+
+        wireCalls.push({
+          id: call.id,
+          type: 'function',
+          function: { name: call.name, arguments: rawArgs },
+        })
+        toolMessages.push({ role: 'tool', tool_call_id: call.id, content: result.output })
+      }
+
+      messages.push({
+        role: 'assistant',
+        content: outcome.text === '' ? null : outcome.text,
+        tool_calls: wireCalls,
+      })
+      for (const msg of toolMessages) messages.push(msg)
+    }
+  }
+
+  private async *runAttempts(
+    input: TurnInput,
+    messages: WireMessage[],
+    signal: AbortSignal,
+    key: string | undefined,
+  ): AsyncGenerator<DriverEvent, Outcome> {
+    const body = JSON.stringify(buildBody({ ...this.configForBody(), model: this.model }, input, messages))
     const headers = this.buildHeaders(key)
 
     let attempt = 0
     for (;;) {
       if (signal.aborted) {
         yield { type: 'done', stopReason: 'cancelled' }
-        return
+        return { kind: 'stopped' }
       }
 
       const controller = new AbortController()
@@ -331,12 +493,12 @@ export class OpenAICompatDriver extends Service implements Driver {
         } catch (err) {
           if (cancelled) {
             yield { type: 'done', stopReason: 'cancelled' }
-            return
+            return { kind: 'stopped' }
           }
           if (timedOut) {
             yield { type: 'error', message: this.scrub(this.idleMessage()) }
             yield { type: 'done', stopReason: 'error' }
-            return
+            return { kind: 'stopped' }
           }
           networkError = err instanceof Error ? err : new Error(String(err))
         }
@@ -346,7 +508,7 @@ export class OpenAICompatDriver extends Service implements Driver {
             const waited = await this.waitRetry(attempt, undefined, signal)
             if (!waited) {
               yield { type: 'done', stopReason: 'cancelled' }
-              return
+              return { kind: 'stopped' }
             }
             attempt++
             continue
@@ -356,7 +518,7 @@ export class OpenAICompatDriver extends Service implements Driver {
             message: this.scrub(`request to ${this._host} failed: ${networkError.message}`),
           }
           yield { type: 'done', stopReason: 'error' }
-          return
+          return { kind: 'stopped' }
         }
 
         const res = response
@@ -366,7 +528,7 @@ export class OpenAICompatDriver extends Service implements Driver {
             message: this.scrub(`request to ${this._host} failed: no response`),
           }
           yield { type: 'done', stopReason: 'error' }
-          return
+          return { kind: 'stopped' }
         }
 
         if (!res.ok) {
@@ -377,19 +539,18 @@ export class OpenAICompatDriver extends Service implements Driver {
             const waited = await this.waitRetry(attempt, retryAfter, signal)
             if (!waited) {
               yield { type: 'done', stopReason: 'cancelled' }
-              return
+              return { kind: 'stopped' }
             }
             attempt++
             continue
           }
           yield { type: 'error', message: this.scrub(message) }
           yield { type: 'done', stopReason: 'error' }
-          return
+          return { kind: 'stopped' }
         }
 
         resetIdle()
-        yield* this.streamResponse(res, resetIdle, () => cancelled, () => timedOut)
-        return
+        return yield* this.streamResponse(res, resetIdle, () => cancelled, () => timedOut)
       } finally {
         if (idleTimer !== undefined) clearTimeout(idleTimer)
         signal.removeEventListener('abort', onCallerAbort)
@@ -401,6 +562,7 @@ export class OpenAICompatDriver extends Service implements Driver {
     const cfg: OpenAICompatConfig & { model: string } = { model: this.model }
     if (this._temperature !== undefined) cfg.temperature = this._temperature
     if (this._maxTokens !== undefined) cfg.maxTokens = this._maxTokens
+    cfg.tools = this._tools
     return cfg
   }
 
@@ -443,34 +605,59 @@ export class OpenAICompatDriver extends Service implements Driver {
 
   /**
    * Parses the SSE body. `resetIdle` is called after every chunk so only *silence* times out,
-   * never a long reply that is still streaming.
+   * never a long reply that is still streaming. Yields text/thinking/error events and returns
+   * the outcome of the round (final answer, tool round, or already-stopped).
    */
   private async *streamResponse(
     res: Response,
     resetIdle: () => void,
     isCancelled: () => boolean,
     isTimedOut: () => boolean,
-  ): AsyncIterable<DriverEvent> {
+  ): AsyncGenerator<DriverEvent, Outcome> {
     if (res.body === null) {
       yield { type: 'error', message: 'invalid stream data' }
       yield { type: 'done', stopReason: 'error' }
-      return
+      return { kind: 'stopped' }
     }
     const reader = res.body.getReader()
     const decoder = new TextDecoder('utf-8')
     const pending: DriverEvent[] = []
     let buffer = ''
     let stopReason: 'end' | 'max_tokens' | 'refused' = 'end'
-    let usage: { inputTokens: number; outputTokens: number } | undefined
+    let usage: Usage | undefined
     let errorMessage: string | undefined
     let finished = false
+    let text = ''
+    const calls = new Map<number, AccumulatedCall>()
     const handlers = {
-      onText: (delta: string) => void pending.push({ type: 'text', delta }),
+      onText: (delta: string) => {
+        text += delta
+        pending.push({ type: 'text', delta })
+      },
       onThinking: (delta: string) => void pending.push({ type: 'thinking', delta }),
       onFinish: (reason: 'end' | 'max_tokens' | 'refused') => void (stopReason = reason),
-      onUsage: (u: { inputTokens: number; outputTokens: number }) => void (usage = u),
+      onUsage: (u: Usage) => void (usage = u),
       onError: (message: string) => void (errorMessage = message),
       onDone: () => void (finished = true),
+      onToolCall: (fragment: ToolCallFragment) => {
+        const existing = calls.get(fragment.index)
+        if (existing === undefined) {
+          calls.set(fragment.index, {
+            index: fragment.index,
+            id: fragment.id ?? `call_${fragment.index}`,
+            name: fragment.name ?? '',
+            args: fragment.args ?? '',
+          })
+          return
+        }
+        if (fragment.id !== undefined && existing.id === `call_${fragment.index}`) {
+          existing.id = fragment.id
+        }
+        if (fragment.name !== undefined && existing.name === '') {
+          existing.name = fragment.name
+        }
+        if (fragment.args !== undefined) existing.args += fragment.args
+      },
     }
     const interrupted = (): DriverEvent[] | undefined => {
       if (isCancelled()) return [{ type: 'done', stopReason: 'cancelled' }]
@@ -485,13 +672,19 @@ export class OpenAICompatDriver extends Service implements Driver {
           result = await reader.read()
         } catch (err) {
           const stop = interrupted()
-          if (stop) return yield* stop
+          if (stop) {
+            yield* stop
+            return { kind: 'stopped' }
+          }
           yield { type: 'error', message: this.scrub(`request to ${this._host} failed: ${errorText(err)}`) }
           yield { type: 'done', stopReason: 'error' }
-          return
+          return { kind: 'stopped' }
         }
         const stop = interrupted()
-        if (stop) return yield* stop
+        if (stop) {
+          yield* stop
+          return { kind: 'stopped' }
+        }
         if (result.done) {
           buffer += decoder.decode()
           if (buffer.length > 0) this.handleLine(stripCR(buffer), handlers)
@@ -518,10 +711,19 @@ export class OpenAICompatDriver extends Service implements Driver {
     if (errorMessage !== undefined) {
       yield { type: 'error', message: this.scrub(errorMessage) }
       yield { type: 'done', stopReason: 'error' }
-      return
+      return { kind: 'stopped' }
     }
-    if (usage !== undefined) yield { type: 'usage', inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
-    yield { type: 'done', stopReason }
+
+    const accumulated = [...calls.values()].sort((a, b) => a.index - b.index)
+    if (accumulated.length > 0) {
+      const outcome: Outcome = { kind: 'tools', calls: accumulated, text }
+      if (usage !== undefined) outcome.usage = usage
+      return outcome
+    }
+
+    const outcome: Outcome = { kind: 'final', stopReason, text }
+    if (usage !== undefined) outcome.usage = usage
+    return outcome
   }
 
   private handleLine(
@@ -530,9 +732,10 @@ export class OpenAICompatDriver extends Service implements Driver {
       onText: (delta: string) => void
       onThinking: (delta: string) => void
       onFinish: (reason: 'end' | 'max_tokens' | 'refused') => void
-      onUsage: (usage: { inputTokens: number; outputTokens: number }) => void
+      onUsage: (usage: Usage) => void
       onError: (message: string) => void
       onDone: () => void
+      onToolCall: (fragment: ToolCallFragment) => void
     },
   ): void {
     if (line.length === 0) return
@@ -590,6 +793,22 @@ export class OpenAICompatDriver extends Service implements Driver {
           if (typeof reasoning === 'string' && reasoning.length > 0) {
             handlers.onThinking(reasoning)
           }
+          const toolCalls = delta.tool_calls
+          if (Array.isArray(toolCalls)) {
+            for (const raw of toolCalls) {
+              if (!isRecord(raw)) continue
+              const index = raw.index
+              if (typeof index !== 'number') continue
+              const fragment: ToolCallFragment = { index }
+              if (typeof raw.id === 'string') fragment.id = raw.id
+              const fn = raw.function
+              if (isRecord(fn)) {
+                if (typeof fn.name === 'string') fragment.name = fn.name
+                if (typeof fn.arguments === 'string') fragment.args = fn.arguments
+              }
+              handlers.onToolCall(fragment)
+            }
+          }
         }
         const finishReason = choice.finish_reason
         if (typeof finishReason === 'string') {
@@ -601,6 +820,13 @@ export class OpenAICompatDriver extends Service implements Driver {
       }
     }
   }
+}
+
+interface ToolCallFragment {
+  index: number
+  id?: string
+  name?: string
+  args?: string
 }
 
 /** Reads at most `limit` bytes of a body as text, then cancels the rest. Never throws. */
