@@ -40,6 +40,18 @@ Ollama (local), or any OpenAI-compatible URL.
 - **Changing a key.** Agents pick up the new key on their next message.
 - **Env vars still work.** Variables like `DEEPSEEK_API_KEY` remain a fallback, e.g. on Linux or for the CLI.
 
+## Web search
+
+On **Models → Web search**, choose one backend:
+- **Brave Search:** needs an API key.
+- **Tavily:** needs an API key.
+- **SearXNG:** your own instance, no key.
+
+Keys are saved to the Keychain. Then switch on **Web search** for an agent (New agent form, or Details → Plugins → Manage)
+or for a room. Agents get two tools:
+- `web_search`: the first use asks for approval; "Allow always" lets that agent search.
+- `web_open`: reads a public page. It can't reach your Mac or local network.
+
 ## Plugin marketplace
 
 Open **Marketplace** in the sidebar:

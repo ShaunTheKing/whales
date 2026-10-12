@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError } from '../api.ts'
+import { SearchSettings } from './SearchSettings.tsx'
 import type { Provider, ProviderInput, ProviderKind, ProviderPreset } from '../types.ts'
 
 function errorText(err: unknown): string {
@@ -687,6 +688,7 @@ export function ModelsView(props: { onChanged(): void }) {
           ) : (
             <div className="list">{providers.map(renderRow)}</div>
           )}
+          <SearchSettings />
         </div>
       </div>
       {renderAddModal()}

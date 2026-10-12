@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentView, Room } from '../types.ts'
-import { shortTime } from '../lib/format.ts'
+import { plainPreview, shortTime } from '../lib/format.ts'
 import { Avatar } from './Avatar.tsx'
 
 export type Selection =
@@ -28,7 +28,7 @@ function conversations(agents: AgentView[], rooms: Room[]): Conversation[] {
       kind: 'agent',
       id: agent.id,
       name: agent.name,
-      preview: agent.last ? `${agent.last.from === 'user' ? 'You: ' : ''}${agent.last.text}` : (agent.role ?? 'No messages yet'),
+      preview: agent.last ? `${agent.last.from === 'user' ? 'You: ' : ''}${plainPreview(agent.last.text)}` : (agent.role ?? 'No messages yet'),
       at: agent.last?.at,
       state: agent.state,
     })),
@@ -36,7 +36,7 @@ function conversations(agents: AgentView[], rooms: Room[]): Conversation[] {
       kind: 'room',
       id: room.id,
       name: room.name,
-      preview: room.last ? `${nameOf(room.last.from)}: ${room.last.text}` : `${room.members.length} members`,
+      preview: room.last ? `${nameOf(room.last.from)}: ${plainPreview(room.last.text)}` : `${room.members.length} members`,
       at: room.last?.at ?? room.createdAt,
     })),
   ]

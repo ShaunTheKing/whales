@@ -24,3 +24,17 @@ export function dividerTime(at: number, now: number = Date.now()): string {
 export function needsDivider(previous: number | undefined, next: number): boolean {
   return previous === undefined || next - previous > 15 * 60_000
 }
+
+/** Markdown → one plain line for previews: drops emphasis markers, heading hashes, list bullets and link targets. */
+export function plainPreview(text: string): string {
+  return text
+    .replace(/```[\s\S]*?(```|$)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, '')
+    .replace(/(\*\*|__|~~|`)/g, '')
+    .replace(/(^|\s)[*_](\S)/g, '$1$2')
+    .replace(/(\S)[*_](?=\s|$)/g, '$1')
+    .replace(/\|/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}

@@ -423,9 +423,10 @@ export class Market extends Service implements MarketService {
 }
 
 /** Built-ins that make sense room-scoped (none today: they all provide per-agent services). */
-const BUILTIN_ROOM_OK = new Set<string>()
+const BUILTIN_ROOM_OK = new Set<string>(['web-search'])
 
 const BUILTIN_DESCRIPTIONS: Record<string, string> = {
+  'web-search': 'Search the live web and read pages (set up a search backend on the Models page).',
   memory: 'Long-term notes the agent can search and add to (remember tool).',
   skills: 'Use skills installed in the shared skill library.',
   workspace: 'Read and write files in the agent’s own workspace folder (asks first).',

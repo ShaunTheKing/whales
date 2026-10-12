@@ -21,7 +21,8 @@ export interface RoomsConfig {
 }
 
 export const ARBITER_INSTRUCTION =
-  'You speak last as the most senior member. Weigh the replies above, resolve any disagreement explicitly, and state the room\'s conclusion.'
+  'You speak last as the most senior member. Weigh the replies above, resolve any disagreement explicitly, and state the room\'s conclusion. ' +
+  'Write in Markdown and end with a section that starts with the heading "## Conclusion".'
 
 const DEFAULT_HISTORY_LIMIT = 40
 const MAX_MEMBERS = 12

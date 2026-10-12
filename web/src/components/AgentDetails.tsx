@@ -11,6 +11,7 @@ const PLUGIN_LABELS: Record<string, string> = {
   skills: 'Skills',
   checkpoints: 'Undo snapshots',
   'bridge-telegram': 'Telegram',
+  'web-search': 'Web search',
 }
 
 /** Right-hand panel of a chat: who the agent is, which model and plugins it uses, and its lifecycle controls. */

@@ -17,6 +17,7 @@ export function NewAgentForm(props: { onCreated(agent: AgentView): void; onCance
   const [driver, setDriver] = useState<DriverChoice>('')
   const [memory, setMemory] = useState(false)
   const [workspace, setWorkspace] = useState(false)
+  const [webSearch, setWebSearch] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
 
@@ -61,6 +62,7 @@ export function NewAgentForm(props: { onCreated(agent: AgentView): void; onCance
       const plugins: PluginRef[] = []
       if (memory) plugins.push({ name: 'memory' })
       if (workspace) plugins.push({ name: 'workspace' })
+      if (webSearch) plugins.push({ name: 'web-search' })
       const spec: AgentSpec = {
         id: id.trim(),
         name: name.trim(),
@@ -153,6 +155,10 @@ export function NewAgentForm(props: { onCreated(agent: AgentView): void; onCance
           <label className="row">
             <input type="checkbox" checked={workspace} onChange={(e) => setWorkspace(e.target.checked)} />
             <span>Workspace (file tools)</span>
+          </label>
+          <label className="row">
+            <input type="checkbox" checked={webSearch} onChange={(e) => setWebSearch(e.target.checked)} />
+            <span>Web search (live search and page reading)</span>
           </label>
           {error ? <div className="error">{error}</div> : null}
           <div className="row">

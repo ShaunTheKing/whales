@@ -1,4 +1,4 @@
-import type { AgentSpec, AgentView, ApprovalDecision, ApprovalRequest, BrowseResult, CatalogEntry, Checkpoint, DmMessage, DriverEvent, FileChange, InstallPreview, InstalledPlugin, MarketSource, Provider, ProviderInput, ProvidersResponse, PluginRef, Room, RoomEvent, RoomMessage, RoomNote, RoomPluginStatus, ServerEvent } from './types.ts'
+import type { AgentSpec, AgentView, ApprovalDecision, ApprovalRequest, BrowseResult, CatalogEntry, Checkpoint, DmMessage, DriverEvent, FileChange, InstallPreview, InstalledPlugin, MarketSource, Provider, ProviderInput, ProvidersResponse, SearchKind, SearchStatus, PluginRef, Room, RoomEvent, RoomMessage, RoomNote, RoomPluginStatus, ServerEvent } from './types.ts'
 
 /**
  * SECURITY (orchestrator-owned). The API token arrives in the URL fragment (`#token=…`, never sent to the
@@ -172,6 +172,14 @@ export const api = {
   testProvider: (id: string) => json<{ ok: boolean; models: string[]; error?: string }>('POST', `/providers/${encodeURIComponent(id)}/test`),
   /** 409 while an agent uses it. Also removes its Keychain item. */
   deleteProvider: (id: string) => json<void>('DELETE', `/providers/${encodeURIComponent(id)}`),
+
+  /** Web search backend. The key is write-only and goes to the Keychain. */
+  searchStatus: () => json<SearchStatus>('GET', '/search'),
+  configureSearch: (input: { kind: SearchKind; baseUrl?: string; apiKey?: string }) => json<SearchStatus>('PUT', '/search', input),
+  clearSearchKey: () => json<void>('DELETE', '/search/key'),
+  disableSearch: () => json<void>('DELETE', '/search'),
+  /** Runs one real query ("Whales test"); may use a little of the backend's quota. */
+  testSearch: () => json<{ ok: boolean; results: number; error?: string }>('POST', '/search/test'),
 
   /** 409 while an agent or room still uses it. */
   uninstall: (name: string) => json<void>('DELETE', `/market/plugins/${encodeURIComponent(name)}`),

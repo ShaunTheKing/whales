@@ -251,3 +251,22 @@ export interface ProviderInput {
   keyEnv?: string
   apiKey?: string
 }
+
+// ---- web search (mirrors src/contracts/search.ts). Keys are write-only. ----
+
+export type SearchKind = 'brave' | 'tavily' | 'searxng'
+
+export interface SearchBackendInfo {
+  kind: SearchKind
+  label: string
+  needsKey: boolean
+  needsUrl: boolean
+  keyEnv?: string
+  docs: string
+}
+
+export interface SearchStatus {
+  backends: SearchBackendInfo[]
+  secretStore: 'keychain' | 'memory' | 'none'
+  config?: { kind: SearchKind; baseUrl?: string; key: 'keychain' | 'env' | 'none' }
+}

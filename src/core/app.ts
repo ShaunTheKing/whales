@@ -15,6 +15,8 @@ import { Rooms, type RoomsConfig } from '../services/rooms.ts'
 import { RoomPlugins } from '../services/room-plugins.ts'
 import { Market, type MarketConfig } from '../services/market.ts'
 import { Providers, type ProvidersConfig } from '../services/providers.ts'
+import { Search, type SearchServiceConfig } from '../services/search.ts'
+import { WebSearch } from '../services/web-search.ts'
 import { AgentCheckpoints, Checkpoints, type CheckpointsConfig } from '../services/checkpoints.ts'
 import { TelegramBridge } from '../bridges/telegram.ts'
 
@@ -36,6 +38,7 @@ export interface AppOptions {
     approvals?: false
     market?: MarketConfig | false
     providers?: ProvidersConfig | false
+    search?: SearchServiceConfig | false
   }
 }
 
@@ -52,6 +55,7 @@ function Whales(ctx: Context, opts: AppOptions & { children: ChildFiber[] }): vo
   add('agents', ctx.plugin(Agents))
   add('rules', ctx.plugin(Rules))
   if (opts.services?.providers !== false) add('providers', ctx.plugin(Providers, opts.services?.providers ?? {}))
+  if (opts.services?.search !== false) add('search', ctx.plugin(Search, opts.services?.search ?? {}))
   const services = opts.services ?? {}
   if (services.approvals !== false) add('approvals', ctx.plugin(Approvals))
   if (services.skills !== false) add('skills', ctx.plugin(SkillLibrary, services.skills ?? {}))
@@ -71,6 +75,7 @@ function Whales(ctx: Context, opts: AppOptions & { children: ChildFiber[] }): vo
       workspace: Workspace,
       checkpoints: AgentCheckpoints,
       'bridge-telegram': TelegramBridge,
+      'web-search': WebSearch,
     }
     for (const [name, plugin] of Object.entries(builtins)) {
       ctx.effect(() => ctx.agents.catalog.register(name, plugin), `catalog:${name}`)

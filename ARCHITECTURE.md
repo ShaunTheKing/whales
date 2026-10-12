@@ -32,6 +32,8 @@ explains them; if the two disagree, the contracts win and this file gets fixed.
 | D14 | **Desktop = Electron `44.4.5`** (dev dep) + **electron-builder `26.16.1`** (dev dep), unsigned arm64 `.dmg` (user request, Phase 6) | Electron 44 ships Node 24 with `node:sqlite`, so the main process runs the unchanged app + server; the window loads the existing web UI. Neither is a runtime dependency of the CLI package. |
 | D15 | **Plugin marketplace: in-process plugins, approved at install** (user choice over an isolated process) | Simplest model that lets plugins register tools/prompt sections like built-ins. Safety comes from pinning (GitHub repo + full commit), digest-checked staging, no install scripts/dependencies, and user-only install routes — not from isolation. |
 | D17 | **Model providers with keys in the macOS Keychain** (user request) via `/usr/bin/security` (no new dependency) | Keys entered in the UI must persist somewhere safer than files; the Keychain is the OS secret store. Writes use `security -i` with the command on stdin so the key never appears in argv. Env-var names still work (headless, non-macOS). |
+| D18 | **Web search = built-in `web-search` plugin + one app-wide backend** (Brave, Tavily or self-hosted SearXNG); keys in the Keychain. Pages fetched by `core/web.ts` with address checks inside the socket's DNS lookup | No new dependency. Vetting the address in the lookup the socket uses removes the DNS-rebinding gap of "resolve, check, then fetch". |
+| D19 | **Markdown rendered by our own parser into React elements** (no HTML strings, no new dependency) | Model output must never become markup; a ~300-line parser covers what chat replies use (headings, lists, tables, code, links). |
 | D16 | **Room plugins = room-scoped branches of each member's context** (`ctx.extend({[ROOM_SCOPE]: roomId})`) | Their tools and prompt sections are filtered per turn by room id, so the same agent keeps a clean DM toolset; agent-wide tools win on a name clash. |
 
 New dependencies need a row in this table first.
@@ -345,10 +347,27 @@ permission request are denied. A single-instance lock protects the database. Key
   without a restart. Deleting a provider that agents still use is refused; a successful delete also deletes its Keychain
   item.
 
+## 10d. Web search and page reading (Phase 8)
+
+`services/search.ts`, `services/web-search.ts` and `core/web.ts` are orchestrator-owned.
+
+- **web_search.** The agent controls only the query; endpoints are fixed (Brave, Tavily) or user-set (SearXNG).
+  - Permission kind `tool`, target `web_search`: the first search asks, and "Allow always" lets that agent search.
+  - Keys are resolved per call and redacted from errors.
+- **web_open.** Permission kind `network`, with the URL as target.
+  - **What it refuses:** non-http(s) URLs, URLs with credentials, and `localhost`, `.local`, `.internal` and `.home.arpa`
+    names. Every address a name resolves to is checked inside the socket's own DNS lookup and refused when private,
+    loopback, link-local, CGNAT, multicast, or mapped or translated IPv6.
+  - **Redirects and limits:** redirects are re-checked on every hop (max 5). Pages are capped at 2 MB, 20 s and 20k
+    characters returned. Only text types are decoded.
+- **Markdown.** `web/src/lib/markdown*.ts(x)` builds React elements. Links render only for http(s) and mailto, open in a
+  new window, and the desktop shell sends them to the system browser. A line that is entirely bold becomes a heading.
+
 ## 11. Phase map
 
 0. Design (this doc + contracts). 1. Spike: core, agents, driver-stub, isolation and dispose proof.
 2. Headless: store, openai-compat and ACP drivers, tools, memory, skills, rules, approvals, routines, CLI.
 3. Rooms, team proposals and hires. 4. Server + web UI. 5. Checkpoints, backups, Telegram, packaging.
 6. (user request) Electron desktop app, plugin marketplace with per-chat/per-room plugins, UI redesign.
+8. (user request) Live web search (web_search + web_open) and Markdown rendering of replies.
 7. (user request) Models page: DeepSeek / OpenAI / OpenCode Zen / OpenRouter / Ollama / custom providers, keys in the Keychain.

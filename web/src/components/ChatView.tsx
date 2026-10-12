@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api.ts'
 import type { AgentView, DmMessage, DriverEvent } from '../types.ts'
 import { dividerTime, needsDivider } from '../lib/format.ts'
+import { Markdown } from '../lib/markdown.tsx'
 import { Avatar } from './Avatar.tsx'
 import { AgentDetails } from './AgentDetails.tsx'
 import { ToolCallView } from './ToolCallView.tsx'
@@ -85,7 +86,13 @@ function Bubble(props: { entry: Entry; live?: boolean }) {
             <span />
           </div>
         ) : entry.content ? (
-          <div className={mine ? 'bubble bubble-user' : 'bubble bubble-agent'}>{entry.content}</div>
+          mine ? (
+            <div className="bubble bubble-user">{entry.content}</div>
+          ) : (
+            <div className="bubble bubble-agent bubble-md">
+              <Markdown text={entry.content} />
+            </div>
+          )
         ) : null}
         {entry.tools.length ? (
           <div className="bubble-tools">

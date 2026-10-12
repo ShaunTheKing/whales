@@ -1,6 +1,20 @@
 # Progress
 
-## Status: Phases 0–7 ✅ accepted 2026-10-12. Parked: driver-acp (Claude Code) awaiting dependency approval.
+## Status: Phases 0–8 ✅ accepted 2026-10-12. Parked: driver-acp (Claude Code) awaiting dependency approval.
+
+### Phase 8 (user request: live web search, Markdown in replies)
+- Built directly by the orchestrator (user asked for no delegation).
+- **Evidence:** 625+ tests.
+  - Brave, Tavily and SearXNG run against fake servers: key header, POST body, json format, HTML stripped from
+    snippets, keys redacted, never in status.
+  - The plugin works agent-wide and as a room plugin, and the first search asks as `tool:web_search`.
+  - web_open refuses loopback, RFC 1918, link-local, metadata IP, `[::1]` and `file:`. Redirects to private IPs or
+    `.local` names are refused, gzip pages decode, and HTML becomes text.
+  - Mutation check: removing the address check in the DNS lookup fails a test.
+  - Markdown parser tests cover bold-line headings, lists, tables, fences, odd input and previews.
+- **Browser run:** a sample reply renders the "Room conclusion (news)" heading, lists, a table, a quote, a link and code.
+  The sidebar preview is plain text. The Models page has a Web search section.
+- **Not run live:** Brave, Tavily or SearXNG (no keys here). The first real search is the user's.
 
 ### Phase 7 (user request: Models in the sidebar, keys saved to the macOS Keychain)
 - `core/keychain.ts`, `services/providers.ts`, driver `provider` config, `/providers` API: orchestrator. Models page:

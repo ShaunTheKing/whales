@@ -4,6 +4,7 @@ import type { App } from '../core/app.ts'
 import type { AgentSpec, AgentId, PluginRef, RoomId } from '../contracts/core.ts'
 import type { InstallPreview } from '../contracts/market.ts'
 import type { ProviderInput } from '../contracts/providers.ts'
+import type { SearchKind } from '../contracts/search.ts'
 import type { AgentHandle } from '../contracts/agents.ts'
 import type { AgentRecord, MessageRecord } from '../contracts/agents.ts'
 import type { Room, RoomMessage, RoomNote, TeamProposal } from '../contracts/rooms.ts'
@@ -865,6 +866,51 @@ function registerProviders(app: App, api: Hono): void {
   })
 }
 
+/** Web search backend (Models page). The API key is write-only, like provider keys. */
+function registerSearch(app: App, api: Hono): void {
+  const search = () => app.ctx.get('search')
+
+  api.get('/search', async (c) => {
+    const service = search()
+    if (!service) return c.json({ error: 'search service unavailable' }, 503)
+    return c.json(await service.status())
+  })
+
+  api.put('/search', async (c) => {
+    const service = search()
+    if (!service) return c.json({ error: 'search service unavailable' }, 503)
+    const body = await readJson(c)
+    const kind = str(body, 'kind')
+    if (kind === undefined) throw new TypeError('kind is required')
+    const input: { kind: SearchKind; baseUrl?: string; apiKey?: string } = { kind: kind as SearchKind }
+    const baseUrl = str(body, 'baseUrl')
+    const apiKey = str(body, 'apiKey')
+    if (baseUrl !== undefined) input.baseUrl = baseUrl
+    if (apiKey !== undefined && apiKey !== '') input.apiKey = apiKey
+    return c.json(await service.configure(input))
+  })
+
+  api.delete('/search/key', async (c) => {
+    const service = search()
+    if (!service) return c.json({ error: 'search service unavailable' }, 503)
+    await service.clearKey()
+    return c.body(null, 204)
+  })
+
+  api.delete('/search', async (c) => {
+    const service = search()
+    if (!service) return c.json({ error: 'search service unavailable' }, 503)
+    await service.disable()
+    return c.body(null, 204)
+  })
+
+  api.post('/search/test', async (c) => {
+    const service = search()
+    if (!service) return c.json({ error: 'search service unavailable' }, 503)
+    return c.json(await service.test())
+  })
+}
+
 function registerTeam(app: App, api: Hono): void {
   api.get('/team/proposals', (c) => {
     const proposals = app.ctx.store.collection('teamProposals').list({ order: 'desc' })
@@ -918,6 +964,7 @@ export function createApi(app: App): Hono {
   registerCheckpoints(app, api)
   registerPlugins(app, api)
   registerProviders(app, api)
+  registerSearch(app, api)
   registerTeam(app, api)
   registerHealth(app, api)
   return api

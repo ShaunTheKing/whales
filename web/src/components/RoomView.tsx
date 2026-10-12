@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api.ts'
 import type { AgentView, DriverEvent, Room, RoomMessage, RoomNote } from '../types.ts'
 import { dividerTime, needsDivider } from '../lib/format.ts'
+import { Markdown } from '../lib/markdown.tsx'
 import { Avatar } from './Avatar.tsx'
 import { ToolCallView } from './ToolCallView.tsx'
 import { PluginPicker } from './PluginPicker.tsx'
@@ -301,7 +302,9 @@ export function RoomView(props: { roomId: string; agents: AgentView[]; onDeleted
               <span />
             </div>
           ) : content ? (
-            <div className="bubble bubble-agent">{content}</div>
+            <div className="bubble bubble-agent bubble-md">
+              <Markdown text={content} />
+            </div>
           ) : null}
           {tools.length ? (
             <div className="bubble-tools">
