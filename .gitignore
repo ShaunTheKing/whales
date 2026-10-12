@@ -1,0 +1,6 @@
+node_modules/
+.delegate/
+.whales/
+.env
+*.log
+dist/
