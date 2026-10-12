@@ -26,7 +26,7 @@
 | ID | Task | Who | Status |
 |---|---|---|---|
 | 2.1 | `drivers/openai-compat.ts` (DeepSeek/OpenAI/OpenRouter/Ollama, SSE streaming) | tests: DeepSeek chat · impl: DeepSeek chat · stream parser rewritten + security hardening by orchestrator | accepted (mock only) |
-| 2.2 | `scripts/live-check.ts` (one real round-trip, 64-token cap) | orchestrator | accepted against local mock; **live call awaiting user OK** |
+| 2.2 | `scripts/live-check.ts` (one real round-trip, 64-token cap) | orchestrator | accepted; live DeepSeek call OK 2026-10-12 (deepseek-chat, 15 in / 2 out, 1.0 s, key not in output) |
 | 2.3 | rules, approvals | orchestrator | todo |
 | 2.4 | memory, skills, routines, CLI | workers | todo |
 | 2.5 | driver-acp (Claude Code) | needs dependency approval | todo |
