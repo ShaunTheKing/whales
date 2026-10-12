@@ -49,6 +49,11 @@ describe('newId', () => {
     assert.equal(seen.size, 1000)
   })
 
+  test('ids created in the same millisecond still sort in creation order', () => {
+    const ids = Array.from({ length: 500 }, () => newId('m'))
+    assert.deepEqual([...ids].sort(), ids)
+  })
+
   test('ids from later milliseconds sort lexicographically after earlier ones', async () => {
     const first = newId('agent')
     await new Promise<void>((resolve) => setTimeout(resolve, 2))

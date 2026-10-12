@@ -13,7 +13,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"test/**/*.test.ts\"",
+    "test": "node --test --test-timeout=20000 \"test/**/*.test.ts\"",
     "check": "pnpm typecheck && pnpm test",
     "spike": "node scripts/spike.ts"
   },

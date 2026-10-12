@@ -98,7 +98,7 @@ describe('validateSpec', () => {
       seniority: 5,
       driver: { name: 'driver-stub', config: { model: 'x' } },
       plugins: [{ name: 'driver-stub' }],
-      rules: ['always be kind'],
+      rules: ['deny running commands matching rm *'],
       permissionMode: 'trusted',
       workdir: '/tmp/whales-full',
       hiredBy: 'boss',

@@ -51,7 +51,7 @@ interface Harness {
 
 async function makeApp(): Promise<Harness> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'whales-tools-'))
-  const app = await createApp({ config: defaultConfig({ home }), storePath: ':memory:' })
+  const app = await createApp({ config: defaultConfig({ env: {}, home, cwd: home }), storePath: ':memory:', services: { approvals: false } })
   return {
     app,
     home,

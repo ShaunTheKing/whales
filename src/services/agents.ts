@@ -15,6 +15,7 @@ import type { ToolSet } from '../contracts/tools.ts'
 import type { TurnInfo } from '../contracts/events.ts'
 import { assertAgentId, newId } from '../core/ids.ts'
 import { ToolsRegistry } from './tools.ts'
+import { parseRule } from './rules.ts'
 
 /** Cordis `FiberState.ACTIVE`. The enum is an ambient const enum, unusable under isolatedModules. */
 const FIBER_ACTIVE = 2
@@ -62,6 +63,13 @@ export function validateSpec(spec: AgentSpec): void {
   if (!Array.isArray(spec.plugins) || !spec.plugins.every(isPluginRef)) fail('plugins', 'must be an array of { name, config? }')
   if (spec.rules !== undefined && (!Array.isArray(spec.rules) || !spec.rules.every((r) => typeof r === 'string'))) {
     fail('rules', 'must be an array of strings')
+  }
+  for (const sentence of spec.rules ?? []) {
+    try {
+      parseRule(sentence)
+    } catch (err) {
+      fail('rules', `contains an invalid rule: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
   if (spec.permissionMode !== undefined && !PERMISSION_MODES.includes(spec.permissionMode)) {
     fail('permissionMode', `must be one of ${PERMISSION_MODES.join(', ')}`)
