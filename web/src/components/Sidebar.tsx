@@ -1,4 +1,7 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentView, Room } from '../types.ts'
+import { shortTime } from '../lib/format.ts'
+import { Avatar } from './Avatar.tsx'
 
 export type Selection =
   | { kind: 'agent'; id: string }
@@ -9,6 +12,38 @@ export type Selection =
   | { kind: 'models' }
   | undefined
 
+interface Conversation {
+  kind: 'agent' | 'room'
+  id: string
+  name: string
+  preview: string
+  at: number | undefined
+  state?: AgentView['state']
+}
+
+function conversations(agents: AgentView[], rooms: Room[]): Conversation[] {
+  const nameOf = (id: string) => (id === 'user' ? 'You' : (agents.find((a) => a.id === id)?.name ?? id))
+  const list: Conversation[] = [
+    ...agents.map((agent): Conversation => ({
+      kind: 'agent',
+      id: agent.id,
+      name: agent.name,
+      preview: agent.last ? `${agent.last.from === 'user' ? 'You: ' : ''}${agent.last.text}` : (agent.role ?? 'No messages yet'),
+      at: agent.last?.at,
+      state: agent.state,
+    })),
+    ...rooms.map((room): Conversation => ({
+      kind: 'room',
+      id: room.id,
+      name: room.name,
+      preview: room.last ? `${nameOf(room.last.from)}: ${room.last.text}` : `${room.members.length} members`,
+      at: room.last?.at ?? room.createdAt,
+    })),
+  ]
+  // Most recent first; conversations without messages keep a stable alphabetical order at the end.
+  return list.sort((a, b) => (b.at ?? 0) - (a.at ?? 0) || a.name.localeCompare(b.name))
+}
+
 export function Sidebar(props: {
   agents: AgentView[]
   rooms: Room[]
@@ -18,101 +53,128 @@ export function Sidebar(props: {
   onSelect(selection: Selection): void
 }) {
   const { agents, rooms, selection, pendingApprovals, status, onSelect } = props
+  const [query, setQuery] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
 
-  const dotClass = (state: AgentView['state']): string => {
-    if (state === 'active') return 'dot dot-active'
-    if (state === 'failed') return 'dot dot-failed'
-    return 'dot dot-stopped'
-  }
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent ? event.key === 'Escape' : !menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', close)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('keydown', close)
+    }
+  }, [menuOpen])
+
+  const list = useMemo(() => {
+    const all = conversations(agents, rooms)
+    const q = query.trim().toLowerCase()
+    return q ? all.filter((c) => c.name.toLowerCase().includes(q) || c.preview.toLowerCase().includes(q)) : all
+  }, [agents, rooms, query])
 
   const statusLabel =
-    status === 'open' ? 'Connected' : status === 'connecting' ? 'Connecting…' : status === 'unauthorized' ? 'Unauthorized' : 'Disconnected'
-  const statusDot = status === 'open' ? 'dot dot-active' : status === 'unauthorized' ? 'dot dot-failed' : 'dot dot-stopped'
-  const itemClass = (active: boolean) => (active ? 'nav-item nav-item-active' : 'nav-item')
+    status === 'open' ? 'Connected' : status === 'connecting' ? 'Connecting…' : status === 'unauthorized' ? 'Signed out' : 'Offline'
+  const isSelected = (c: Conversation) => selection?.kind === c.kind && selection.id === c.id
+  const navClass = (active: boolean) => (active ? 'nav-item nav-item-active' : 'nav-item')
+
+  const choose = (next: Selection) => {
+    setMenuOpen(false)
+    onSelect(next)
+  }
 
   return (
     <aside className="sidebar">
-      <div className="wordmark">
-        <span className="wordmark-dots">
-          <span />
-          <span />
-          <span />
-        </span>
-        Whales
-      </div>
-      <div className="tagline">Local multi-agent workspace</div>
-
-      <button type="button" className="nav-primary" onClick={() => onSelect({ kind: 'new-agent' })}>
-        <span aria-hidden="true">+</span> New agent
-      </button>
-
-      <div className="nav-section">
-        <div className="nav-label">
-          <span>Agents</span>
-          <button type="button" className="nav-add" title="New agent" onClick={() => onSelect({ kind: 'new-agent' })}>
-            +
+      <div className="sidebar-top">
+        <div className="wordmark">Whales</div>
+        <div className="menu-anchor" ref={menuRef}>
+          <button
+            type="button"
+            className="icon-btn"
+            title="New"
+            aria-label="New agent or room"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <path d="M7 1.5v11M1.5 7h11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
           </button>
+          {menuOpen ? (
+            <div className="menu" role="menu">
+              <button type="button" role="menuitem" className="menu-item" onClick={() => choose({ kind: 'new-agent' })}>
+                New agent
+                <span className="muted small">a chat with one AI</span>
+              </button>
+              <button type="button" role="menuitem" className="menu-item" onClick={() => choose({ kind: 'new-room' })}>
+                New room
+                <span className="muted small">several agents together</span>
+              </button>
+            </div>
+          ) : null}
         </div>
-        {agents.length === 0 ? (
-          <div className="nav-empty">No agents yet.</div>
-        ) : (
-          <ul>
-            {agents.map((agent) => (
-              <li key={agent.id}>
-                <button
-                  type="button"
-                  className={itemClass(selection?.kind === 'agent' && selection.id === agent.id)}
-                  onClick={() => onSelect({ kind: 'agent', id: agent.id })}
-                >
-                  <span className={dotClass(agent.state)} />
-                  <span>{agent.name}</span>
-                  <span className="muted">{agent.role ?? agent.driver.model ?? ''}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
 
-      <div className="nav-section">
-        <div className="nav-label">
-          <span>Rooms</span>
-          <button type="button" className="nav-add" title="New room" onClick={() => onSelect({ kind: 'new-room' })}>
-            +
-          </button>
-        </div>
-        {rooms.length === 0 ? (
-          <div className="nav-empty">No rooms yet.</div>
+      <label className="search">
+        <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true">
+          <circle cx="5.5" cy="5.5" r="4.25" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M8.7 8.7 12 12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" aria-label="Search conversations" />
+      </label>
+
+      <div className="conv-list" role="list">
+        {list.length === 0 ? (
+          <div className="nav-empty">
+            {query ? 'No matches.' : 'No conversations yet. Press + to create an agent.'}
+          </div>
         ) : (
-          <ul>
-            {rooms.map((room) => (
-              <li key={room.id}>
-                <button
-                  type="button"
-                  className={itemClass(selection?.kind === 'room' && selection.id === room.id)}
-                  onClick={() => onSelect({ kind: 'room', id: room.id })}
-                >
-                  <span aria-hidden="true">#</span>
-                  <span>{room.name}</span>
-                  <span className="muted">{room.members.length}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          list.map((c) => (
+            <button
+              key={`${c.kind}:${c.id}`}
+              type="button"
+              role="listitem"
+              className={isSelected(c) ? 'conv conv-active' : 'conv'}
+              onClick={() => onSelect({ kind: c.kind, id: c.id })}
+            >
+              <span className="conv-avatar">
+                <Avatar id={c.id} name={c.name} kind={c.kind} size={38} />
+                {c.kind === 'agent' && c.state !== 'active' ? <span className={c.state === 'failed' ? 'presence presence-failed' : 'presence'} /> : null}
+              </span>
+              <span className="conv-main">
+                <span className="conv-top">
+                  <span className="conv-name">{c.name}</span>
+                  {c.at ? <span className="conv-time">{shortTime(c.at)}</span> : null}
+                </span>
+                <span className="conv-preview">{c.preview}</span>
+              </span>
+            </button>
+          ))
         )}
       </div>
 
       <div className="sidebar-footer">
-        <button type="button" className={itemClass(selection?.kind === 'models')} onClick={() => onSelect({ kind: 'models' })}>
-          <span aria-hidden="true">◎</span>
+        <button type="button" className={navClass(selection?.kind === 'models')} onClick={() => onSelect({ kind: 'models' })}>
+          <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true">
+            <circle cx="7.5" cy="7.5" r="5.75" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <circle cx="7.5" cy="7.5" r="2.25" fill="currentColor" />
+          </svg>
           <span>Models</span>
         </button>
-        <button type="button" className={itemClass(selection?.kind === 'market')} onClick={() => onSelect({ kind: 'market' })}>
-          <span aria-hidden="true">⊞</span>
-          <span>Marketplace</span>
+        <button type="button" className={navClass(selection?.kind === 'market')} onClick={() => onSelect({ kind: 'market' })}>
+          <svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true">
+            <rect x="1.5" y="1.5" width="5" height="5" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <rect x="8.5" y="1.5" width="5" height="5" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <rect x="1.5" y="8.5" width="5" height="5" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <rect x="8.5" y="8.5" width="5" height="5" rx="1.2" fill="none" stroke="currentColor" strokeWidth="1.3" />
+          </svg>
+          <span>Plugins</span>
         </button>
         <div className="status-line">
-          <span className={statusDot} />
+          <span className={status === 'open' ? 'dot dot-active' : status === 'unauthorized' ? 'dot dot-failed' : 'dot dot-stopped'} />
           <span>{statusLabel}</span>
           {pendingApprovals > 0 ? <span className="badge badge-warn">{pendingApprovals} waiting</span> : null}
         </div>

@@ -26,6 +26,15 @@ export interface AgentView {
   driver: { name: string; model?: string; provider?: string }
   plugins: string[]
   hiredBy?: string
+  /** Latest DM message, for the conversation list. Text is clipped to 140 characters. */
+  last?: { text: string; at: number; from: 'user' | 'assistant' }
+}
+
+const PREVIEW = 140
+
+function preview(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > PREVIEW ? `${flat.slice(0, PREVIEW - 1)}…` : flat
 }
 
 const AGENT_ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/
@@ -154,9 +163,13 @@ function registerAgents(app: App, api: Hono): void {
     for (const record of records) ids.add(record.id)
     for (const handle of app.ctx.agents.list()) ids.add(handle.id)
     const views: AgentView[] = []
+    const messages = app.ctx.store.collection('messages')
     for (const id of [...ids].sort()) {
       const view = agentView(app, id)
-      if (view) views.push(view)
+      if (!view) continue
+      const [latest] = messages.list({ scope: `agent:${id}`, order: 'desc', limit: 1 })
+      if (latest) view.last = { text: preview(latest.content), at: latest.createdAt, from: latest.role }
+      views.push(view)
     }
     return c.json(views)
   })
@@ -269,7 +282,13 @@ function registerRooms(app: App, api: Hono): void {
   api.get('/rooms', (c) => {
     const service = rooms()
     if (!service) return c.json({ error: 'rooms service unavailable' }, 503)
-    return c.json(service.list())
+    // Each room carries its latest message for the conversation list.
+    return c.json(
+      service.list().map((room) => {
+        const [latest] = service.history(room.id, 1).slice(-1)
+        return latest ? { ...room, last: { text: preview(latest.content), at: latest.createdAt, from: latest.speaker } } : room
+      }),
+    )
   })
 
   api.post('/rooms', async (c) => {

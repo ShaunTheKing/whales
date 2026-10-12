@@ -99,6 +99,11 @@ export default function App() {
           case 'approval-resolved':
             setApprovals((prev) => prev.filter((a) => a.id !== event.data.id))
             break
+          case 'turn-after':
+            // Keeps conversation previews fresh for turns started elsewhere (Telegram, routines, other windows).
+            void loadAgents()
+            void loadRooms()
+            break
           default:
             break
         }
@@ -109,7 +114,7 @@ export default function App() {
       },
     )
     return unsubscribe
-  }, [authed, loadAgents])
+  }, [authed, loadAgents, loadRooms])
 
   const handleToken = useCallback(() => {
     setAuthed(true)
@@ -169,11 +174,15 @@ export default function App() {
         {selection?.kind === 'agent' && selectedAgent ? (
           <ChatView agent={selectedAgent} onChanged={handleAgentChanged} onOpenMarket={() => setSelection({ kind: 'market' })} />
         ) : null}
-        {selection?.kind === 'agent' && !selectedAgent ? (
-          <div className="empty">Agent not found.</div>
-        ) : null}
+        {selection?.kind === 'agent' && !selectedAgent && !loading ? <div className="empty">This agent no longer exists.</div> : null}
         {selection?.kind === 'room' ? (
-          <RoomView roomId={selection.id} agents={agents} onDeleted={handleRoomDeleted} onOpenMarket={() => setSelection({ kind: 'market' })} />
+          <RoomView
+            roomId={selection.id}
+            agents={agents}
+            onDeleted={handleRoomDeleted}
+            onOpenMarket={() => setSelection({ kind: 'market' })}
+            onChanged={() => void loadRooms()}
+          />
         ) : null}
         {selection?.kind === 'new-agent' ? (
           <NewAgentForm onCreated={handleAgentCreated} onCancel={() => setSelection(undefined)} onOpenModels={() => setSelection({ kind: 'models' })} />
@@ -189,14 +198,15 @@ export default function App() {
               'Loading…'
             ) : (
               <>
+                <div className="welcome-mark" aria-hidden="true" />
                 <h2>Welcome to Whales</h2>
-                <p>Create an agent to start a chat, put several agents in a room to work together, and add plugins from the Marketplace.</p>
+                <p>Connect a model, create an agent and start chatting. Put several agents in a room to work together.</p>
                 <div className="row" style={{ justifyContent: 'center' }}>
                   <button type="button" className="btn btn-primary" onClick={() => setSelection({ kind: 'new-agent' })}>
                     New agent
                   </button>
-                  <button type="button" className="btn" onClick={() => setSelection({ kind: 'market' })}>
-                    Browse plugins
+                  <button type="button" className="btn" onClick={() => setSelection({ kind: 'models' })}>
+                    Connect a model
                   </button>
                 </div>
               </>

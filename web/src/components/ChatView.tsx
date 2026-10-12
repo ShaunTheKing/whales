@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { JSX } from 'react'
 import { api, ApiError } from '../api.ts'
 import type { AgentView, DmMessage, DriverEvent } from '../types.ts'
+import { dividerTime, needsDivider } from '../lib/format.ts'
+import { Avatar } from './Avatar.tsx'
+import { AgentDetails } from './AgentDetails.tsx'
 import { ToolCallView } from './ToolCallView.tsx'
-import { PluginPicker } from './PluginPicker.tsx'
-import { HistoryPanel } from './HistoryPanel.tsx'
 
 interface ToolState {
   id: string
@@ -17,34 +17,17 @@ interface LiveMessage {
   role: 'user' | 'assistant'
   content: string
   tools: ToolState[]
+  at: number
   usage?: { inputTokens: number; outputTokens: number }
   cancelled?: boolean
 }
 
 type Entry = LiveMessage & { id: string }
 
-function fromServer(message: DmMessage): Entry {
-  return { id: message.id, role: message.role, content: message.content, tools: [] }
-}
+const DETAILS_KEY = 'whales.details.open'
 
-function renderEntry(entry: Entry, agentName: string) {
-  return (
-    <div key={entry.id} className={entry.role === 'user' ? 'msg msg-user' : 'msg msg-agent'}>
-      <div className="msg-head">
-        {entry.role === 'user' ? 'You' : agentName}
-        {entry.cancelled ? <span className="badge">cancelled</span> : null}
-      </div>
-      {entry.content ? <div className="msg-body">{entry.content}</div> : null}
-      {entry.tools.map((tool) => (
-        <ToolCallView key={tool.id} name={tool.name} input={tool.input} result={tool.result} />
-      ))}
-      {entry.usage ? (
-        <div className="muted">
-          · {entry.usage.inputTokens} in / {entry.usage.outputTokens} out
-        </div>
-      ) : null}
-    </div>
-  )
+function fromServer(message: DmMessage): Entry {
+  return { id: message.id, role: message.role, content: message.content, tools: [], at: message.createdAt }
 }
 
 function applyEvent(message: LiveMessage, event: DriverEvent): LiveMessage {
@@ -72,18 +55,69 @@ function applyEvent(message: LiveMessage, event: DriverEvent): LiveMessage {
   }
 }
 
+function readDetailsPref(): boolean {
+  try {
+    return localStorage.getItem(DETAILS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeDetailsPref(open: boolean): void {
+  try {
+    localStorage.setItem(DETAILS_KEY, open ? '1' : '0')
+  } catch {
+    // Storage unavailable: the panel just does not remember its state.
+  }
+}
+
+function Bubble(props: { entry: Entry; live?: boolean }) {
+  const { entry, live } = props
+  const mine = entry.role === 'user'
+  const thinking = live && !entry.content && entry.tools.length === 0
+  return (
+    <div className={mine ? 'bubble-row from-user' : 'bubble-row from-agent'}>
+      <div className="bubble-stack">
+        {thinking ? (
+          <div className="bubble bubble-agent typing" aria-label="Thinking">
+            <span />
+            <span />
+            <span />
+          </div>
+        ) : entry.content ? (
+          <div className={mine ? 'bubble bubble-user' : 'bubble bubble-agent'}>{entry.content}</div>
+        ) : null}
+        {entry.tools.length ? (
+          <div className="bubble-tools">
+            {entry.tools.map((tool) => (
+              <ToolCallView key={tool.id} name={tool.name} input={tool.input} result={tool.result} />
+            ))}
+          </div>
+        ) : null}
+        {entry.cancelled || entry.usage ? (
+          <div className="bubble-meta">
+            {entry.cancelled ? 'Stopped' : ''}
+            {entry.cancelled && entry.usage ? ' · ' : ''}
+            {entry.usage ? `${entry.usage.inputTokens} in · ${entry.usage.outputTokens} out` : ''}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export function ChatView(props: { agent: AgentView; onChanged(): void; onOpenMarket(): void }) {
   const { agent, onChanged, onOpenMarket } = props
-  const [showPlugins, setShowPlugins] = useState(false)
   // Server history (text only) plus turns finished in this session, which keep their tool calls and usage.
   const [history, setHistory] = useState<Entry[]>([])
   const [live, setLive] = useState<LiveMessage | undefined>(undefined)
   const [error, setError] = useState<string | undefined>(undefined)
   const [streaming, setStreaming] = useState(false)
   const [prompt, setPrompt] = useState('')
-  const [showHistory, setShowHistory] = useState(false)
+  const [showDetails, setShowDetails] = useState(readDetailsPref)
   const controllerRef = useRef<AbortController | undefined>(undefined)
   const bodyRef = useRef<HTMLDivElement | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -98,6 +132,7 @@ export function ChatView(props: { agent: AgentView; onChanged(): void; onOpenMar
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
       })
+    inputRef.current?.focus()
     return () => {
       cancelled = true
       controllerRef.current?.abort()
@@ -110,14 +145,23 @@ export function ChatView(props: { agent: AgentView; onChanged(): void; onOpenMar
     if (body) body.scrollTop = body.scrollHeight
   }, [history, live])
 
+  // Grow the composer with its content (up to the CSS max-height).
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input) return
+    input.style.height = 'auto'
+    input.style.height = `${input.scrollHeight}px`
+  }, [prompt])
+
   const send = useCallback(async () => {
     const text = prompt.trim()
     if (!text || streaming) return
     setPrompt('')
     setError(undefined)
-    setHistory((prev) => [...prev, { id: `local-user-${Date.now()}`, role: 'user', content: text, tools: [] }])
+    const now = Date.now()
+    setHistory((prev) => [...prev, { id: `local-user-${now}`, role: 'user', content: text, tools: [], at: now }])
     // Local copy of the streaming message: state updaters must stay pure (StrictMode runs them twice).
-    let current: LiveMessage = { role: 'assistant', content: '', tools: [] }
+    let current: LiveMessage = { role: 'assistant', content: '', tools: [], at: now }
     setLive(current)
     setStreaming(true)
     const controller = new AbortController()
@@ -154,7 +198,7 @@ export function ChatView(props: { agent: AgentView; onChanged(): void; onOpenMar
       // Keep the finished turn as it was streamed (tool calls, usage) instead of reloading text-only history.
       const finished: Entry = { ...current, id: `local-agent-${Date.now()}` }
       setLive(undefined)
-      setHistory((items) => [...items, finished])
+      if (finished.content || finished.tools.length || finished.cancelled) setHistory((items) => [...items, finished])
       onChanged()
     }
   }, [agent.id, onChanged, prompt, streaming])
@@ -165,7 +209,7 @@ export function ChatView(props: { agent: AgentView; onChanged(): void; onOpenMar
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
         event.preventDefault()
         void send()
       }
@@ -173,90 +217,100 @@ export function ChatView(props: { agent: AgentView; onChanged(): void; onOpenMar
     [send],
   )
 
-  const toggleState = useCallback(async () => {
-    setError(undefined)
-    try {
-      if (agent.state === 'active' || agent.state === 'starting') await api.stopAgent(agent.id)
-      else await api.startAgent(agent.id)
-      onChanged()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }, [agent.id, agent.state, onChanged])
+  const toggleDetails = useCallback(() => {
+    setShowDetails((open) => {
+      writeDetailsPref(!open)
+      return !open
+    })
+  }, [])
 
-  const remove = useCallback(async () => {
-    if (!window.confirm(`Delete agent "${agent.name}"?`)) return
-    setError(undefined)
-    try {
-      await api.deleteAgent(agent.id)
-      onChanged()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }, [agent.id, agent.name, onChanged])
+  const subtitle = [agent.role, agent.driver.model ?? (agent.driver.name === 'driver-stub' ? 'test driver' : agent.driver.name)]
+    .filter(Boolean)
+    .join(' · ')
+  const offline = agent.state !== 'active' && agent.state !== 'starting'
 
-  const running = agent.state === 'active' || agent.state === 'starting'
+  const rows: React.ReactNode[] = []
+  let previousAt: number | undefined
+  const all = live ? [...history, { ...live, id: 'live' }] : history
+  for (const entry of all) {
+    if (needsDivider(previousAt, entry.at)) {
+      rows.push(
+        <div key={`t-${entry.id}`} className="time-divider">
+          {dividerTime(entry.at)}
+        </div>,
+      )
+    }
+    previousAt = entry.at
+    rows.push(<Bubble key={entry.id} entry={entry} live={entry.id === 'live'} />)
+  }
 
   return (
-    <div className="panel">
-      <div className="panel-head">
-        <div className="title-block">
-          <strong>{agent.name}</strong>
-          <span>
-            {agent.role ? `${agent.role} · ` : ''}
-            {agent.driver.model ?? agent.driver.name} · {agent.state}
-            {agent.plugins.length ? ` · ${agent.plugins.join(', ')}` : ''}
-          </span>
+    <div className={showDetails ? 'chat-layout with-details' : 'chat-layout'}>
+      <div className="panel">
+        <div className="panel-head chat-head">
+          <div className="chat-title">
+            <Avatar id={agent.id} name={agent.name} size={30} />
+            <div className="title-block">
+              <strong>{agent.name}</strong>
+              <span>
+                {offline ? <span className="state-off">{agent.state === 'failed' ? 'Failed' : 'Stopped'} · </span> : null}
+                {subtitle}
+              </span>
+            </div>
+          </div>
+          <div className="header-actions">
+            <button
+              type="button"
+              className={showDetails ? 'icon-btn icon-btn-on' : 'icon-btn'}
+              onClick={toggleDetails}
+              aria-pressed={showDetails}
+              title={showDetails ? 'Hide details' : 'Show details'}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="2.25" fill="none" stroke="currentColor" strokeWidth="1.4" />
+                <line x1="10" y1="2.5" x2="10" y2="13.5" stroke="currentColor" strokeWidth="1.4" />
+              </svg>
+            </button>
+          </div>
         </div>
-        <div className="header-actions">
-          <button className="btn btn-sm" type="button" onClick={() => setShowPlugins(true)}>
-            Plugins
-          </button>
-          <button className="btn btn-sm" type="button" onClick={() => setShowHistory((value) => !value)}>
-            History
-          </button>
-          <button className="btn btn-sm" type="button" onClick={() => void toggleState()}>
-            {running ? 'Stop' : 'Start'}
-          </button>
-          <button className="btn btn-danger btn-sm" type="button" onClick={() => void remove()}>
-            Delete
-          </button>
+        <div className="panel-body" ref={bodyRef}>
+          <div className="messages">
+            {all.length === 0 ? (
+              <div className="chat-empty">
+                <Avatar id={agent.id} name={agent.name} size={56} />
+                <strong>{agent.name}</strong>
+                <span className="muted">{agent.role ?? 'Say hello to get started.'}</span>
+              </div>
+            ) : null}
+            {rows}
+            {error ? <div className="chat-error">{error}</div> : null}
+          </div>
+        </div>
+        <div className="composer">
+          <textarea
+            ref={inputRef}
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={`Message ${agent.name}`}
+            rows={1}
+          />
+          {streaming ? (
+            <button className="send-btn send-stop" type="button" aria-label="Stop" title="Stop" onClick={stop}>
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                <rect width="12" height="12" rx="2" fill="currentColor" />
+              </svg>
+            </button>
+          ) : (
+            <button className="send-btn" type="button" aria-label="Send" title="Send" onClick={() => void send()} disabled={prompt.trim().length === 0}>
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <path d="M7 12V2M7 2 2.5 6.5M7 2l4.5 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
-      {showPlugins ? (
-        <PluginPicker
-          target={{ kind: 'agent', id: agent.id, name: agent.name }}
-          onClose={() => setShowPlugins(false)}
-          onChanged={onChanged}
-          onOpenMarket={onOpenMarket}
-        />
-      ) : null}
-      {showHistory ? <HistoryPanel agentId={agent.id} /> : null}
-      <div className="panel-body" ref={bodyRef}>
-        <div className="messages">
-          {history.map((entry) => renderEntry(entry, agent.name))}
-          {live ? renderEntry({ ...live, id: 'live' }, agent.name) : null}
-          {error ? <div className="msg msg-system error">{error}</div> : null}
-        </div>
-      </div>
-      <div className="composer">
-        <textarea
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={`Message ${agent.name}…`}
-          rows={1}
-        />
-        {streaming ? (
-          <button className="btn btn-sm" type="button" onClick={stop}>
-            Stop
-          </button>
-        ) : (
-          <button className="send-btn" type="button" aria-label="Send" title="Send" onClick={() => void send()} disabled={prompt.trim().length === 0}>
-            ↑
-          </button>
-        )}
-      </div>
+      {showDetails ? <AgentDetails agent={agent} onChanged={onChanged} onOpenMarket={onOpenMarket} onClose={toggleDetails} /> : null}
     </div>
   )
 }

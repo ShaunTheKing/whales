@@ -11,6 +11,8 @@ export interface AgentView {
   driver: { name: string; model?: string; provider?: string }
   plugins: string[]
   hiredBy?: string
+  /** Latest DM message (clipped), for the conversation list. */
+  last?: { text: string; at: number; from: 'user' | 'assistant' }
 }
 
 export interface PluginRef {
@@ -57,6 +59,8 @@ export interface Room {
   members: string[]
   createdAt: number
   plugins?: PluginRef[]
+  /** Latest room message (clipped); `from` is an agent id or 'user'. Only on GET /rooms. */
+  last?: { text: string; at: number; from: string }
 }
 
 export interface RoomMessage {

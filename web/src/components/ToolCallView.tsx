@@ -24,10 +24,9 @@ export function ToolCallView(props: { name: string; input: unknown; result?: { o
   return (
     <details className={className}>
       <summary>
-        {'🔧 '}
-        {name}
-        {' — '}
-        {status}
+        <span className={`tool-dot tool-dot-${status}`} aria-hidden="true" />
+        <span className="mono">{name}</span>
+        <span className="tool-status">{status === 'running' ? 'running…' : status === 'error' ? 'failed' : 'done'}</span>
       </summary>
       <div className="tool-io">
         <pre className="tool-io">{pretty(input)}</pre>
