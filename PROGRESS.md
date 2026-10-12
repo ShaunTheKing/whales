@@ -25,6 +25,9 @@
 
 - 2026-10-12 Cordis 4.0.0-rc.10, Node type stripping (no build), TS 5.9.3, `moduleResolution: Bundler`,
   `node:sqlite`. See ARCHITECTURE.md §1.
+- 2026-10-12 (user) Repo: private `ShaunTheKing/whales`, push after each accepted task.
+- 2026-10-12 (user) Rooms: rule `allow` is downgraded to `ask`; `deny` still denies.
+- 2026-10-12 (user) Hires: lead proposes, the user approves each via the approvals queue (`agent.hire`).
 
 ## Open risks
 
