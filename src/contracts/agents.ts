@@ -36,7 +36,7 @@ export interface TurnOptions {
 export interface AgentRuntime {
   readonly id: AgentId
   readonly spec: AgentSpec
-  /** True while a turn is running. Turns on one agent are serialised (FIFO). */
+  /** True while a turn is queued or running. Turns on one agent are serialised (FIFO). */
   readonly busy: boolean
   /** Registered sections are removed automatically when the registering plugin disposes. */
   addPromptSection(section: PromptSection): () => void

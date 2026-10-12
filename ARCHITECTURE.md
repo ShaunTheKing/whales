@@ -254,6 +254,14 @@ readable error.
   `static inject = [...]` and `constructor(ctx: Context, config) { super(ctx, 'foo'); ... }`.
 - Cordis's `FiberState` is an ambient `const enum`, which `isolatedModules` forbids. Compare
   against the numbers via the local constants in `core/` if needed.
+- **Declare `inject` for every service a plugin touches as `ctx.foo`** (`static inject = ['store']`, or
+  `{ inject: ['tools'], apply }`). Cordis 4 throws `cannot get property "foo" without inject` otherwise.
+  `ctx.get('foo')` needs no inject and returns `undefined` when absent.
+- Inside a service method, `this.ctx` is the **caller's** context (Cordis tracing). That is what makes
+  `register()`-style APIs clean up with the calling plugin; a service that needs its own context must keep
+  it in a separate field (see `Runtime.actx`).
+- `await ctx.plugin(p)` also resolves when `p` is stuck PENDING on a missing inject. Check
+  `fiber.state === 2` (ACTIVE) when readiness matters (see `Agents.spawn`).
 - **No JS `#private` fields on Services** — use the TS `private` keyword. `ctx.get(name)` and `ctx.name`
   return a Cordis tracing Proxy, and `#private` access through a Proxy throws `TypeError`. For the same
   reason, never compare `ctx.foo === ctx.get('foo')`.

@@ -127,8 +127,8 @@ before(async () => {
     storePath: ':memory:',
   })
 
-  app.ctx.agents.catalog.register('probe-x', probeX)
-  app.ctx.agents.catalog.register('probe-y', probeY)
+  app.ctx.agents.catalog.register('probe-x', { inject: ['tools'], apply: probeX })
+  app.ctx.agents.catalog.register('probe-y', { inject: ['tools'], apply: probeY })
 
   app.ctx.on('whales/agent-event', (e) => {
     agentEventIds.push(e.agentId)

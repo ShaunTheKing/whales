@@ -1,25 +1,29 @@
 # Progress
 
-## Current phase: 0 — Design (awaiting approval)
+## Current phase: 1 — Spike ✅ accepted (2026-10-12). Next: Phase 2 — Headless usable (awaiting go-ahead)
 
-| Task | Owner | Status |
-|---|---|---|
-| Probe Cordis 4 API (isolate, effect, dispose) | orchestrator | accepted |
-| `src/contracts/*.ts` interface files | orchestrator | in review (user) |
-| `ARCHITECTURE.md` | orchestrator | in review (user) |
-| Tooling: package.json, tsconfig, .gitignore, .env.example | orchestrator | accepted |
+### Phase 1 tasks
 
-## Phase 1 plan — Spike (not started)
-
-| ID | Task | Model | Depends on |
+| ID | Task | Who | Status |
 |---|---|---|---|
-| 1.1 | `core/ids.ts`, `core/config.ts` + tests | chat | — |
-| 1.2 | `services/store.ts` (node:sqlite) — tests first, then impl | chat ×2 | — |
-| 1.3 | `services/agents.ts` (spawn/dispose/runtime/turn lock) | orchestrator writes, lifecycle-critical | 1.1 |
-| 1.4 | `services/tools.ts` registry (authorize path stubbed to `approvals` contract) | orchestrator | 1.3 |
-| 1.5 | `drivers/stub.ts` scripted driver (+ socket/timer effects for the dispose proof) | chat | — |
-| 1.6 | `core/app.ts` createApp | chat | 1.2, 1.3 |
-| 1.7 | Acceptance test + `scripts/spike.ts` demo (A vs B isolation, dispose) | tests by worker from contract; orchestrator verifies | all |
+| 1.1 | `core/ids.ts`, `core/config.ts` | tests: DeepSeek chat · impl: DeepSeek chat | accepted (2 test bugs fixed by orchestrator) |
+| 1.2 | `services/store.ts` (node:sqlite) | tests: DeepSeek chat · impl: DeepSeek chat | accepted (1 test bug fixed: null-prototype rows) |
+| 1.3 | `services/agents.ts` (spawn/dispose/restore, runtime, turn lock) | orchestrator | accepted; worker tests found 2 real bugs (history order, `busy` while queued), fixed |
+| 1.4 | `services/tools.ts` registry + fail-closed permission gate | orchestrator | accepted |
+| 1.5 | `drivers/stub.ts` | tests: DeepSeek chat · impl: DeepSeek chat | accepted (`#private` → `private`: Cordis proxies) |
+| 1.6 | `services/store-service.ts`, `core/app.ts` | orchestrator | accepted |
+| 1.7 | `test/phase1.acceptance.test.ts` | DeepSeek reasoner (failed: spent budget thinking) → chat | accepted; mutation-tested |
+| 1.8 | `test/services/agents.test.ts`, `tools.test.ts` | DeepSeek chat, from contracts | accepted |
+| 1.9 | `scripts/spike.ts` real-process demo | DeepSeek chat | accepted (counter plumbing + field name fixed) |
+
+### Phase 1 evidence
+- `pnpm typecheck` clean · `pnpm test` 156/156 · `pnpm spike` 28/28 checks, exits 0 on its own (no leaked handles).
+- Mutation check: removing `isolate()` fails all 6 acceptance tests; removing the dispose hook fails exactly
+  "disposing A tears down only A".
+
+## Phase 2 plan — Headless usable (not started)
+store ✔ (done in P1) · rules (orchestrator) · approvals (orchestrator) · memory · skills (install path reviewed) ·
+driver-openai-compat · driver-acp (fs/terminal handlers by orchestrator) · routines · CLI.
 
 ## Decisions log
 
@@ -28,15 +32,22 @@
 - 2026-10-12 (user) Repo: private `ShaunTheKing/whales`, push after each accepted task.
 - 2026-10-12 (user) Rooms: rule `allow` is downgraded to `ask`; `deny` still denies.
 - 2026-10-12 (user) Hires: lead proposes, the user approves each via the approvals queue (`agent.hire`).
+- 2026-10-12 `AgentRuntime.busy` = queued or running (contract wording updated).
+- 2026-10-12 `defaults.cheapDriver` in whales.config.json replaces the default as a whole (no deep merge).
 
 ## Open risks
 
 - Cordis 4 is an RC; API may shift before 4.0. Mitigation: pinned, wrapped in core/ and agents.
+- Cordis rules that bit workers (inject, proxies vs `#private`, PENDING fibers resolving) are now in
+  ARCHITECTURE.md §9 and must be pasted into every brief that touches Cordis.
+- If a consumer abandons `turn()` mid-stream, `whales/turn-after` does not fire (lock is released). Checkpoints (P5) must tolerate it.
+- A plugin that fails *after* startup does not change `AgentHandle.state` yet.
 - ACP adapter for Claude Code (`@zed-industries/claude-agent-acp`) is pre-1.0; evaluate in Phase 2.
 - Single process: a misbehaving plugin can still block the event loop or crash all agents.
 
-## Cost
+## Cost (approximate)
 
-| Phase | Orchestrator | Workers |
+| Phase | Orchestrator | DeepSeek workers |
 |---|---|---|
-| 0 | design + probes (no workers used) | 0 |
+| 0 | design + probes | 0 |
+| 1 | review, 4 Cordis probes, agents/tools/app (~350 lines) | 11 calls, ~102k tokens (~45k in / ~57k out; 21k wasted by the reasoner retry) |
