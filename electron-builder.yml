@@ -1,0 +1,21 @@
+# macOS desktop build. Unsigned: Gatekeeper will warn on first open (right-click → Open).
+appId: com.shauntheking.whales
+productName: Whales
+directories:
+  output: release
+files:
+  - dist/**
+  - web/dist/**
+  - plugins/**
+  - package.json
+  - "!**/*.map"
+asar: true
+mac:
+  target:
+    - target: dmg
+      arch: [arm64]
+  category: public.app-category.developer-tools
+  identity: null
+  hardenedRuntime: false
+dmg:
+  title: Whales

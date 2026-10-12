@@ -29,6 +29,9 @@ explains them; if the two disagree, the contracts win and this file gets fixed.
 | D11 | **Memory recall = lexical BM25**, no embeddings | Local, deterministic, no extra model or dependency. The interface allows swapping in embeddings later. |
 | D12 | **Tests: `node --test`** with `node:assert/strict` | Built in. |
 | D13 | **Distribution = compiled JS** (`tsc -p tsconfig.build.json`, `rewriteRelativeImportExtensions`) | Node refuses to type-strip files under node_modules; the repo itself still runs .ts directly. |
+| D14 | **Desktop = Electron `44.4.5`** (dev dep) + **electron-builder `26.16.1`** (dev dep), unsigned arm64 `.dmg` (user request, Phase 6) | Electron 44 ships Node 24 with `node:sqlite`, so the main process runs the unchanged app + server; the window loads the existing web UI. Neither is a runtime dependency of the CLI package. |
+| D15 | **Plugin marketplace: in-process plugins, approved at install** (user choice over an isolated process) | Simplest model that lets plugins register tools/prompt sections like built-ins. Safety comes from pinning (GitHub repo + full commit), digest-checked staging, no install scripts/dependencies, and user-only install routes — not from isolation. |
+| D16 | **Room plugins = room-scoped branches of each member's context** (`ctx.extend({[ROOM_SCOPE]: roomId})`) | Their tools and prompt sections are filtered per turn by room id, so the same agent keeps a clean DM toolset; agent-wide tools win on a name clash. |
 
 New dependencies need a row in this table first.
 
@@ -298,8 +301,34 @@ defence) **and**, when a browser sends one, an Origin equal to this server (or `
 CSP, nosniff, no framing and no referrer. The UI receives the token in the URL fragment, keeps it in sessionStorage and strips
 it from the address bar. Binding beyond loopback requires a fixed env token.
 
+## 10b. Marketplace and desktop security (Phase 6)
+
+**Marketplace** (`services/market.ts`, orchestrator-owned). Index files are fetched over https only, with no redirects, a
+1 MiB cap and a strict schema. Each entry pins `https://github.com/<owner>/<repo>` to a full 40-hex commit. Installs run git
+through `core/git.ts` with the scrubbed environment shared with checkpoints. That run also has: https as the only protocol,
+no redirects, `core.symlinks=false`, fsck, no submodules, and a fetch of exactly that commit, verified with `rev-parse`.
+
+The staged folder is limited to 2,000 files and 20 MiB. It may not contain symlinks or special files, and it must have a
+`whales-plugin.json` whose entry stays inside the plugin. Its sha256 digest covers both paths and contents. Install requires
+the preview's digest and `acknowledge: true`, re-hashes the staged files, and moves exactly those files into
+`<dataDir>/plugins/<name>/<digest16>/`. At every start the folder is re-hashed, and a plugin modified on disk is refused.
+
+What Whales never does for a plugin: run install scripts, fetch dependencies, or offer an agent tool that reaches these
+routes. Built-in names cannot be taken. Uninstall is refused while an agent or room still lists the plugin. ESM modules
+cannot be unloaded, so removed code stays in memory until restart.
+
+Plugins run in-process with full access, which is what the user accepted at install. Their tools still go through rules and
+approvals like any other tool.
+
+**Desktop** (`desktop/main.ts`, orchestrator-owned). The app and server run in the Electron main process, bound to
+127.0.0.1 on a random port. The token is random per launch and never comes from the environment. The renderer runs with
+`contextIsolation`, `sandbox` on and no preload, so it is an ordinary web page with the same CSP as `whales serve`.
+Navigation is pinned to the server origin, and http(s) links open in the system browser. New windows, webviews and every
+permission request are denied. A single-instance lock protects the database. Keys are read from `<dataDir>/.env`.
+
 ## 11. Phase map
 
 0. Design (this doc + contracts). 1. Spike: core, agents, driver-stub, isolation and dispose proof.
 2. Headless: store, openai-compat and ACP drivers, tools, memory, skills, rules, approvals, routines, CLI.
 3. Rooms, team proposals and hires. 4. Server + web UI. 5. Checkpoints, backups, Telegram, packaging.
+6. (user request) Electron desktop app, plugin marketplace with per-chat/per-room plugins, UI redesign.

@@ -18,6 +18,43 @@ pnpm pack                                   # builds dist/ + the web UI, writes 
 npm install -g ./whales-0.0.0.tgz           # then: whales help
 ```
 
+## Desktop app (macOS)
+
+```bash
+pnpm desktop          # build, then open the Whales window
+pnpm desktop:dist     # build an unsigned arm64 .dmg into release/
+```
+The window runs the same server as `whales serve` internally (127.0.0.1, random port, new token every launch).
+For model keys, put them in `~/.whales/.env` (e.g. `DEEPSEEK_API_KEY=…`); apps started from Finder don't see your shell's
+environment. The dmg is unsigned: the first time, right-click Whales.app → Open.
+
+## Plugin marketplace
+
+Open **Marketplace** in the sidebar:
+
+- **Sources.** Add an index file: a JSON list of plugins, each pinned to a GitHub repo and an exact commit.
+- **Discover.** Browse the sources. You can also install straight from a GitHub repo and commit, or from a local folder.
+- **Install.** First you see a preview: the files, their size, a content hash and any warnings. Plugins are third-party code
+  that runs with full access, so Install is enabled only after you tick the acknowledgement.
+
+Then use the **Plugins** button in any chat or room to switch plugins on:
+
+- **In a chat:** the plugin becomes part of that agent.
+- **In a room:** every member gets it, but its tools exist only inside that room.
+
+Example plugins live in [`plugins/`](plugins):
+
+- `dice`
+- `deepseek-delegate`: hand a subtask to a DeepSeek worker; needs `DEEPSEEK_API_KEY`.
+- `web-fetch`
+
+Install them with *Install from GitHub or a folder → folder*.
+
+**Writing a plugin.** A plugin is a folder with a `whales-plugin.json` (`name`, `version`, `description`, `entry`,
+optional `scopes`) and an entry module. The entry `export default`s a Cordis plugin object such as
+`{ name, inject: ['tools'], apply(ctx, config) { ctx.tools.register(…) } }`. It may not have dependencies; Node built-ins
+are fine. See `plugins/dice/index.js`.
+
 ## Web UI
 
 ```bash

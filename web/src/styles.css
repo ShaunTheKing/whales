@@ -1096,3 +1096,22 @@ ul {
     width: calc(100% - 32px);
   }
 }
+
+/* ---------- macOS desktop shell (hidden title bar) ---------- */
+
+[data-shell='mac-desktop'] .sidebar {
+  padding-top: 46px;
+  -webkit-app-region: drag;
+}
+
+[data-shell='mac-desktop'] .panel-head {
+  -webkit-app-region: drag;
+}
+
+[data-shell='mac-desktop'] .sidebar button,
+[data-shell='mac-desktop'] .sidebar a,
+[data-shell='mac-desktop'] .sidebar input,
+[data-shell='mac-desktop'] .panel-head button,
+[data-shell='mac-desktop'] .panel-head input {
+  -webkit-app-region: no-drag;
+}
