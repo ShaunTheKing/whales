@@ -147,7 +147,11 @@ async function shutdown(): Promise<void> {
   await appInstance?.stop().catch(() => {})
 }
 
-// One instance per data dir: two processes must not share the SQLite database.
+// One instance per data dir: two processes must not share the SQLite database. Electron's lock lives in userData,
+// so a custom WHALES_DATA_DIR gets its own userData (and therefore its own lock).
+if (process.env.WHALES_DATA_DIR && path.isAbsolute(process.env.WHALES_DATA_DIR)) {
+  app.setPath('userData', path.join(process.env.WHALES_DATA_DIR, 'desktop'))
+}
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
