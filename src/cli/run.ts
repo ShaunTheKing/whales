@@ -14,6 +14,9 @@ import type { ApprovalRequest } from '../contracts/approvals.ts'
 import type { DriverEvent, StopReason } from '../contracts/driver.ts'
 import type {} from '../contracts/index.ts'
 import { cmdRooms, cmdTeam } from './rooms.ts'
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { startServer } from '../server/server.ts'
 
 export interface CliIO {
   stdout: { write(chunk: string): unknown }
@@ -55,6 +58,7 @@ Commands:
   team hire <proposalId>               hire the team after your approval
   approvals [--all]                    show the approval audit log
   daemon                               restore agents and run routines
+  serve [--port n] [--host h] [--dev]  HTTP/WebSocket API + web UI (prints a one-time UI link)
   help                                 show this help
 
 Run 'whales help' for this message.
@@ -880,6 +884,45 @@ async function cmdDaemon(ctx: Ctx): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// serve
+// ---------------------------------------------------------------------------
+
+async function cmdServe(ctx: Ctx, args: string[]): Promise<number> {
+  let parsed
+  try {
+    parsed = parseArgs({ args, allowPositionals: false, strict: true, options: { port: { type: 'string' }, host: { type: 'string' }, dev: { type: 'boolean' } } })
+  } catch (err) {
+    usage(`serve: ${errMessage(err)}`)
+  }
+  const port = parsed.values.port === undefined ? undefined : Number(parsed.values.port)
+  if (port !== undefined && (!Number.isInteger(port) || port < 0 || port > 65535)) usage('serve: --port must be 0..65535')
+  const restored = await ctx.app.ctx.agents.restore()
+  for (const failure of restored.failed) ctx.io.stderr.write(`failed ${failure.id}: ${failure.error}\n`)
+  const webDist = fileURLToPath(new URL('../../web/dist', import.meta.url))
+  const server = await startServer(ctx.app, {
+    ...(parsed.values.host ? { host: parsed.values.host } : {}),
+    ...(port !== undefined ? { port } : {}),
+    env: ctx.io.env,
+    ...(existsSync(webDist) ? { staticDir: webDist } : {}),
+    ...(parsed.values.dev ? { devOrigins: ['http://localhost:5173', 'http://127.0.0.1:5173'] } : {}),
+  })
+  ctx.io.stderr.write(`whales API on ${server.url} (${restored.ok.length} agents running)\n`)
+  ctx.io.stderr.write(existsSync(webDist) ? `open the UI: ${server.uiUrl}\n` : 'web UI not built: run `pnpm --filter whales-web build`\n')
+  if (server.tokenSource === 'generated') ctx.io.stderr.write('(a new token is generated on every start; set WHALES_API_TOKEN to keep one)\n')
+  await new Promise<void>((resolve) => {
+    const stop = () => {
+      process.off('SIGINT', stop)
+      process.off('SIGTERM', stop)
+      resolve()
+    }
+    process.once('SIGINT', stop)
+    process.once('SIGTERM', stop)
+  })
+  await server.close()
+  return 0
+}
+
+// ---------------------------------------------------------------------------
 // dispatcher
 // ---------------------------------------------------------------------------
 
@@ -899,6 +942,8 @@ async function dispatch(ctx: Ctx, argv: string[]): Promise<number> {
       return cmdSkills(ctx, rest)
     case 'routines':
       return cmdRoutines(ctx, rest)
+    case 'serve':
+      return cmdServe(ctx, rest)
     case 'rooms':
       return cmdRooms(ctx, rest)
     case 'team':

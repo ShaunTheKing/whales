@@ -50,6 +50,25 @@ function isPluginRef(value: unknown): value is PluginRef {
   return ref.config === undefined || (typeof ref.config === 'object' && ref.config !== null && !Array.isArray(ref.config))
 }
 
+const SECRET_KEY = /key|token|secret|password/i
+
+/** Path of the first string value stored under a secret-looking key (keys ending in 'Env' are names, not values). */
+export function findSecret(value: unknown, path: string): string | undefined {
+  if (Array.isArray(value)) {
+    for (const [i, item] of value.entries()) {
+      const found = findSecret(item, `${path}[${i}]`)
+      if (found) return found
+    }
+  } else if (typeof value === 'object' && value !== null) {
+    for (const [key, child] of Object.entries(value)) {
+      if (typeof child === 'string' && SECRET_KEY.test(key) && !key.endsWith('Env')) return `${path}.${key}`
+      const found = findSecret(child, `${path}.${key}`)
+      if (found) return found
+    }
+  }
+  return undefined
+}
+
 export function validateSpec(spec: AgentSpec): void {
   assertAgentId(spec.id)
   const fail = (field: string, problem: string): never => {
@@ -64,6 +83,8 @@ export function validateSpec(spec: AgentSpec): void {
   if (spec.rules !== undefined && (!Array.isArray(spec.rules) || !spec.rules.every((r) => typeof r === 'string'))) {
     fail('rules', 'must be an array of strings')
   }
+  const secret = findSecret({ driver: spec.driver, plugins: spec.plugins }, 'spec')
+  if (secret) fail(secret, 'looks like a secret; store keys in environment variables and reference them by name (e.g. apiKeyEnv)')
   for (const sentence of spec.rules ?? []) {
     try {
       parseRule(sentence)

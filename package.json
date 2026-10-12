@@ -18,10 +18,14 @@
     "spike": "node scripts/spike.ts"
   },
   "dependencies": {
-    "cordis": "4.0.0-rc.10"
+    "@hono/node-server": "2.1.1",
+    "cordis": "4.0.0-rc.10",
+    "hono": "4.13.9",
+    "ws": "8.22.0"
   },
   "devDependencies": {
     "@types/node": "22.20.5",
+    "@types/ws": "8.18.1",
     "typescript": "5.9.3"
   },
   "devEngines": {
