@@ -8,6 +8,7 @@ files:
   - web/dist/**
   - plugins/**
   - package.json
+  - LICENSE
   - "!**/*.map"
 asar: true
 mac:

@@ -131,3 +131,10 @@ whales help
 Give an agent the `bridge-telegram` plugin with your bot token in `TELEGRAM_BOT_TOKEN` and the chat ids allowed to talk to it:
 `{ "name": "bridge-telegram", "config": { "allowedChatIds": [123456789] } }`. Messages from other chats are ignored;
 approvals for that agent arrive as messages with Allow / Always / Deny buttons.
+
+## License
+
+[MIT](LICENSE). Whales was written from scratch. Projects it was inspired by (bloks, OpenDots, Rakazo) contributed no
+code. Optional tools it can run, such as DonSeTch and SearXNG, are separate programs under their own licences: you
+install them, and they are not bundled with Whales.
+

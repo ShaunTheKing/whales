@@ -4,7 +4,7 @@
   "private": true,
   "description": "Local-first multi-agent workspace on Cordis",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "node": ">=22.18.0"
   },
@@ -15,7 +15,8 @@
     "dist",
     "web/dist",
     "README.md",
-    ".env.example"
+    ".env.example",
+    "LICENSE"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
