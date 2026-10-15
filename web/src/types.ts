@@ -29,7 +29,7 @@ export interface AgentSpec {
   driver: PluginRef
   plugins: PluginRef[]
   rules?: string[]
-  permissionMode?: 'ask' | 'strict' | 'trusted'
+  permissionMode?: 'ask' | 'strict' | 'trusted' | 'edits' | 'auto'
   hiredBy?: string
 }
 

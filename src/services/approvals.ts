@@ -11,7 +11,7 @@ import { sentenceFor } from './rules.ts'
  */
 
 const KINDS: readonly ActionKind[] = ['file.read', 'file.write', 'shell', 'network', 'tool', 'message', 'skill.install', 'agent.hire']
-const MODES: readonly PermissionMode[] = ['ask', 'strict', 'trusted']
+const MODES: readonly PermissionMode[] = ['ask', 'strict', 'trusted', 'edits', 'auto']
 const DECISIONS: readonly ApprovalDecision[] = ['allow-once', 'allow-always', 'deny']
 
 interface Waiter {

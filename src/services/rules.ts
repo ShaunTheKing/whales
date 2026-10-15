@@ -146,6 +146,10 @@ export function evaluateRules(rules: readonly Rule[], action: Action, mode: Perm
   if (deny) return { verdict: 'deny', matched, reason: `denied by rule "${deny.sentence}"` }
   const ask = first('ask')
   if (ask) return { verdict: 'ask', matched, reason: `rule "${ask.sentence}" requires approval` }
+  if (mode === 'auto') return { verdict: 'allow', matched, reason: 'auto mode' }
+  if (mode === 'edits' && (action.kind === 'file.read' || action.kind === 'file.write')) {
+    return { verdict: 'allow', matched, reason: 'allow-edits mode' }
+  }
   const allow = first('allow')
   if (allow) {
     if (action.roomId !== undefined) return { verdict: 'ask', matched, reason: `shared rooms always ask (allowed by "${allow.sentence}")` }

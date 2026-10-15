@@ -72,7 +72,7 @@ const AGENT_ID_RE = /^[a-z0-9][a-z0-9-]{0,31}$/
 const API_KEY_ENV_RE = /^[A-Z][A-Z0-9_]*$/
 const DRIVERS = ['openai', 'stub'] as const
 const PRESETS = ['deepseek', 'openai', 'openrouter', 'ollama'] as const
-const MODES: readonly PermissionMode[] = ['ask', 'strict', 'trusted']
+const MODES: readonly PermissionMode[] = ['ask', 'strict', 'trusted', 'edits', 'auto']
 
 export class UsageError extends Error {
   override name = 'UsageError'

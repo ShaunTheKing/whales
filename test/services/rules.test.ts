@@ -318,6 +318,21 @@ test('evaluate: no match in a room asks even in trusted mode', () => {
   assert.equal(ev.verdict, 'ask')
 })
 
+test('evaluate: auto allows unmatched actions, rooms included; deny/ask rules and escapes still apply', () => {
+  const rules = [rule('deny', 'network', 'https://bad/**'), rule('ask', 'shell', 'git push*')]
+  assert.equal(evaluateRules(rules, act('tool', 'web_search', { roomId: 'r1' }), 'auto').verdict, 'allow')
+  assert.equal(evaluateRules(rules, act('network', 'https://bad/x'), 'auto').verdict, 'deny')
+  assert.equal(evaluateRules(rules, act('shell', 'git push origin'), 'auto').verdict, 'ask')
+  assert.equal(evaluateRules(rules, act('file.write', '../x'), 'auto').verdict, 'ask')
+})
+
+test('evaluate: edits allows workdir file actions only, rooms included', () => {
+  assert.equal(evaluateRules([], act('file.write', 'src/a.ts', { roomId: 'r1' }), 'edits').verdict, 'allow')
+  assert.equal(evaluateRules([], act('file.read', 'src/a.ts'), 'edits').verdict, 'allow')
+  assert.equal(evaluateRules([], act('shell', 'ls'), 'edits').verdict, 'ask')
+  assert.equal(evaluateRules([], act('tool', 'web_search'), 'edits').verdict, 'ask')
+})
+
 test('evaluate: matched lists all matching rules', () => {
   const rules = [rule('allow', 'shell', '**'), rule('deny', 'shell', 'rm *')]
   const ev = evaluateRules(rules, act('shell', 'rm -rf /'), 'ask')

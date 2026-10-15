@@ -17,7 +17,7 @@ export interface ConfigSources {
 
 const CONFIG_FILE = 'whales.config.json'
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
-const PERMISSION_MODES: readonly PermissionMode[] = ['ask', 'strict', 'trusted']
+const PERMISSION_MODES: readonly PermissionMode[] = ['ask', 'strict', 'trusted', 'edits', 'auto']
 const SECRET_KEY_RE = /key|token|secret|password/i
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -143,7 +143,7 @@ function validateMerged(cfg: WhalesConfig): void {
     failAt('server.tokenEnv', 'must be a string')
   }
   if (!PERMISSION_MODES.includes(defaults.permissionMode)) {
-    failAt('defaults.permissionMode', 'must be one of ask, strict, trusted')
+    failAt('defaults.permissionMode', 'must be one of ask, strict, trusted, edits, auto')
   }
 
   const driver = defaults.cheapDriver

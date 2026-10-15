@@ -20,9 +20,12 @@ export interface PluginRef {
  * - `ask`     (default) rule `allow` → allow, no match → ask the user.
  * - `strict`  like `ask`, but rule `allow` is ignored: everything not denied asks.
  * - `trusted` no match → allow. `deny` / `ask` rules still apply.
- * In a room, the effective mode is always `ask` and rule `allow` is downgraded to `ask`.
+ * - `edits`   like `ask`, but file reads/writes inside the workdir are allowed, rooms included.
+ * - `auto`    everything not denied or asked by a rule is allowed, rooms included.
+ * In a room, `ask`/`strict`/`trusted` behave as `ask` and rule `allow` is downgraded to `ask`.
+ * Paths outside the workdir always ask, in every mode.
  */
-export type PermissionMode = 'ask' | 'strict' | 'trusted'
+export type PermissionMode = 'ask' | 'strict' | 'trusted' | 'edits' | 'auto'
 
 export interface AgentSpec {
   id: AgentId

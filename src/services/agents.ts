@@ -21,7 +21,7 @@ import { roomScopeOf } from '../core/scope.ts'
 /** Cordis `FiberState.ACTIVE`. The enum is an ambient const enum, unusable under isolatedModules. */
 const FIBER_ACTIVE = 2
 const HISTORY_LIMIT = 40
-const PERMISSION_MODES: readonly PermissionMode[] = ['ask', 'strict', 'trusted']
+const PERMISSION_MODES: readonly PermissionMode[] = ['ask', 'strict', 'trusted', 'edits', 'auto']
 
 export class Catalog implements PluginCatalog {
   private plugins = new Map<string, Plugin>()
